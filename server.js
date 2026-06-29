@@ -706,13 +706,13 @@ app.post("/api/admin/import/json", upload.single("file"), async (req, res) => {
       let n = 0;
       for (const u of data.users) {
         await pool.query(`
-          INSERT INTO users (id,pwd,name,phone,email,role,approved,subscription_until,created_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          INSERT INTO users (id,pwd,name,phone,role,approved,subscription_until,created_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
           ON CONFLICT (id) DO UPDATE SET
             pwd=EXCLUDED.pwd, name=EXCLUDED.name, phone=EXCLUDED.phone,
-            email=EXCLUDED.email, role=EXCLUDED.role, approved=EXCLUDED.approved,
+            role=EXCLUDED.role, approved=EXCLUDED.approved,
             subscription_until=EXCLUDED.subscription_until
-        `, [u.id,u.pwd,u.name||"",u.phone||"",u.email||"",u.role||"client",u.approved??false,u.subscription_until||null,u.created_at||new Date()]);
+        `, [u.id,u.pwd,u.name||"",u.phone||"",u.role||"client",u.approved??false,u.subscription_until||null,u.created_at||new Date()]);
         n++;
       }
       report.users = n;
@@ -938,11 +938,13 @@ app.post("/api/admin/import/excel", upload.single("file"), async (req, res) => {
           sms_config=COALESCE($3, sms_config),
           company_phone=COALESCE($4, company_phone),
           company_email=COALESCE($5, company_email),
-          company_website=COALESCE($6, company_website)
+          company_website=COALESCE($6, company_website),
+          company_whatsapp=COALESCE($7, company_whatsapp)
         WHERE id=1
       `, [s.company_name||null, s.subscription_price||null,
           smsConfig ? JSON.stringify(smsConfig) : null,
-          s.company_phone||null, s.company_email||null, s.company_website||null]);
+          s.company_phone||null, s.company_email||null, s.company_website||null,
+          s.company_whatsapp||null]);
       report.settings = 1;
     }
 
