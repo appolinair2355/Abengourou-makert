@@ -102,6 +102,18 @@
       <div class="shortcuts" id="shortcuts"></div>
     </div>
 
+    <!-- PAGE 2 : CONCOURS + ACTUALITÉS + EMPLOI -->
+    <section class="section-block page2-section">
+      <div class="page2-tabs">
+        <button class="page2-tab active" onclick="switchPage2Tab('concours',this)">📚 Concours CI</button>
+        <button class="page2-tab" onclick="switchPage2Tab('actualites',this)">📰 Actualités</button>
+        <button class="page2-tab" onclick="switchPage2Tab('emploi',this)">💼 Emploi</button>
+      </div>
+      <div id="page2Content">
+        <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+      </div>
+    </section>
+
     <!-- OFFRES FLASH -->
     <section class="section-block flash-section">
       <div class="section-head">
@@ -122,29 +134,11 @@
       </div>
     </section>
 
-    <!-- CONCOURS -->
-    <section class="section-block">
-      <div class="section-head">
-        <h2>🎓 Concours CI</h2>
-        <a href="#" class="see-all" onclick="return false">Voir tous →</a>
-      </div>
-      <div class="tiles-grid" id="concoursGrid"></div>
-    </section>
-
-    <!-- EMPLOI -->
-    <section class="section-block">
-      <div class="section-head">
-        <h2>💼 Offres d'emploi</h2>
-        <a href="#" class="see-all" onclick="return false">Voir tout →</a>
-      </div>
-      <div class="tiles-grid" id="jobsGrid"></div>
-    </section>
-
     <!-- IMMOBILIER -->
     <section class="section-block">
       <div class="section-head">
         <h2>🏠 Immobilier</h2>
-        <a href="#" class="see-all" onclick="return false">Voir plus →</a>
+        <a href="#" class="see-all" onclick="filterCat('immobilier');return false">Voir plus →</a>
       </div>
       <div class="products-grid" id="realGrid"></div>
     </section>
@@ -161,18 +155,9 @@
     <section class="section-block">
       <div class="section-head">
         <h2>🍽️ Restaurants &amp; Livraison</h2>
-        <a href="#" class="see-all" onclick="return false">Voir plus →</a>
+        <a href="#" class="see-all" onclick="filterCat('restaurants');return false">Voir plus →</a>
       </div>
       <div class="products-grid" id="restoGrid"></div>
-    </section>
-
-    <!-- ACTUALITES -->
-    <section class="section-block">
-      <div class="section-head">
-        <h2>📰 Actualités Abengourou</h2>
-        <a href="#" class="see-all" onclick="return false">Toute l'actu →</a>
-      </div>
-      <ul class="news-list" id="newsList"></ul>
     </section>
 
     <!-- RENCONTRES & AMITIÉS -->

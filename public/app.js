@@ -30,11 +30,11 @@ const SHORTCUTS = [
 ];
 
 const BANNERS = [
-  { bg: "linear-gradient(135deg,#F57C00 0%,#E65100 50%,#BF360C 100%)", title: "Bienvenue sur ABENGOUROU-MARKET", sub: "La plateforme numérique d'Abengourou · Acheter, Vendre, Découvrir", cta: "Découvrir les offres" },
-  { bg: "linear-gradient(135deg,#2E7D32 0%,#1B5E20 100%)", title: "🏡 Immobilier à Abengourou", sub: "Terrains, villas, studios — les meilleures offres au meilleur prix", cta: "Voir l'immobilier" },
-  { bg: "linear-gradient(135deg,#0277BD 0%,#01579B 100%)", title: "💼 Trouvez votre emploi ici", sub: "Des centaines d'offres d'emploi dans la région d'Abengourou", cta: "Voir les offres d'emploi" },
-  { bg: "linear-gradient(135deg,#6A1B9A 0%,#4A148C 100%)", title: "🎓 Concours de la Fonction Publique", sub: "Toutes les informations sur les concours CI — INFAS, ENA, Police…", cta: "Voir les concours" },
-  { bg: "linear-gradient(135deg,#C62828 0%,#B71C1C 100%)", title: "⚡ Offres Flash du Jour", sub: "Profitez des meilleures promotions — stocks limités !", cta: "Voir les offres flash" },
+  { bg: "linear-gradient(135deg,#F57C00 0%,#E65100 50%,#BF360C 100%)", title: "Bienvenue sur ABENGOUROU-MARKET", sub: "La plateforme numérique d'Abengourou · Acheter, Vendre, Découvrir", cta: "Découvrir les offres", cat: "" },
+  { bg: "linear-gradient(135deg,#2E7D32 0%,#1B5E20 100%)", title: "🏡 Immobilier à Abengourou", sub: "Terrains, villas, studios — les meilleures offres au meilleur prix", cta: "Voir l'immobilier", cat: "immobilier" },
+  { bg: "linear-gradient(135deg,#0277BD 0%,#01579B 100%)", title: "💼 Trouvez votre emploi ici", sub: "Des centaines d'offres d'emploi dans la région d'Abengourou", cta: "Voir les offres d'emploi", cat: "emploi" },
+  { bg: "linear-gradient(135deg,#6A1B9A 0%,#4A148C 100%)", title: "🎓 Concours de la Fonction Publique", sub: "Toutes les informations sur les concours CI — INFAS, ENA, Police…", cta: "Voir les concours", cat: "concours-ci" },
+  { bg: "linear-gradient(135deg,#C62828 0%,#B71C1C 100%)", title: "⚡ Offres Flash du Jour", sub: "Profitez des meilleures promotions — stocks limités !", cta: "Voir les offres flash", cat: "marchandises" },
 ];
 
 
@@ -100,11 +100,29 @@ function renderSidebar(target) {
 // Catégories "payantes" (détails cachés — payer pour voir)
 const PAID_CATS = new Set(["emploi","concours-ci","recrutement"]);
 
+// Modes d'affichage par catégorie
+// 'info'      = informations + photo uniquement (pas de bouton d'action)
+// 'whatsapp'  = bouton WhatsApp uniquement
+// 'order'     = Commander (panier) + WhatsApp
+// 'sante'     = page spéciale santé
+// 'scolaires' = page spéciale avec sous-catégories
+function catMode(cat) {
+  if (["concours-ci","emploi","evenements"].includes(cat)) return "info";
+  if (["annonces","services","immobilier"].includes(cat)) return "whatsapp";
+  if (cat === "sante") return "sante";
+  if (cat === "scolaires") return "scolaires";
+  return "order"; // marchandises, transport, residences, etc.
+}
+
 async function filterCat(cat) {
   document.getElementById("mobileSidebar").classList.remove("show");
   if (cat === "rencontres") return showRencontresPage();
+  if (cat === "sante") return showSantePage();
+  if (cat === "scolaires") return showScolairesPage();
+
   const catInfo = CATEGORIES.find(c => c[0] === cat) || [cat, "🗂️", cat];
   const [slug, icon, label] = catInfo;
+  const mode = catMode(slug);
 
   showPage("page-category");
 
@@ -114,7 +132,7 @@ async function filterCat(cat) {
       <span class="cat-page-icon">${icon}</span>
       <div>
         <h2>${label}</h2>
-        <p>Toutes les annonces · Abengourou et Côte d'Ivoire</p>
+        <p>${mode === "info" ? "Informations officielles · Abengourou et Côte d'Ivoire" : "Toutes les annonces · Abengourou et Côte d'Ivoire"}</p>
       </div>
     </div>
     <div class="section-block">
@@ -135,11 +153,23 @@ async function filterCat(cat) {
     return;
   }
 
-  const isPaid = PAID_CATS.has(slug);
+  let cardsHtml = "";
+  let gridClass = "products-grid";
+  if (mode === "info") {
+    gridClass = "info-cards-grid";
+    cardsHtml = products.map(p => infoCard(p)).join("");
+  } else if (mode === "whatsapp") {
+    gridClass = "products-grid";
+    cardsHtml = products.map(p => waOnlyCard(p)).join("");
+  } else {
+    gridClass = "products-grid";
+    cardsHtml = products.map(p => productCard({...p, name:p.title})).join("");
+  }
+
   wrap.querySelector(".section-block").innerHTML = `
     <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${products.length} annonce${products.length>1?"s":""} disponible${products.length>1?"s":""}</div>
-    <div class="${isPaid ? "listings-grid" : "products-grid"}">
-      ${products.map(p => isPaid ? paidListingCard(p) : productCard({...p, name:p.title})).join("")}
+    <div class="${gridClass}">
+      ${cardsHtml}
     </div>`;
 }
 
@@ -165,7 +195,7 @@ function renderCarousel() {
       <div class="car-slide-content">
         <h2>${b.title}</h2>
         <p>${b.sub}</p>
-        <span class="car-cta">${b.cta}</span>
+        <span class="car-cta" onclick="filterCat('${b.cat}')" style="cursor:pointer">${b.cta}</span>
       </div>
     </div>`).join("");
   dots.innerHTML = BANNERS.map((_, i) =>
@@ -200,45 +230,77 @@ function startCountdown() {
   tick(); setInterval(tick, 1000);
 }
 
-// ============ PAID LISTING CARD (Emploi / Concours-CI) ============
-function paidListingCard(p) {
-  const img = p.image ? `<img src="${p.image}" alt="${p.title}" loading="lazy" />` : `<span>🔒</span>`;
-  return `<div class="plisting-card">
-    <div class="plisting-img">${img}</div>
-    <div class="plisting-body">
-      <div class="plisting-cat">${CATEGORIES.find(c=>c[0]===p.category)?.[2]||p.category}</div>
-      <div class="plisting-title">${p.title}</div>
-      <div class="plisting-lock">
-        <span class="lock-icon">🔒</span>
-        <span>Détails accessibles après paiement</span>
-      </div>
-      <div class="plisting-price">${fmt(p.price)}</div>
-      <button class="btn-add plisting-btn" onclick='openPaidListing(${JSON.stringify({id:p.id,title:p.title,price:p.price,category:p.category,ownerName:""}).replace(/'/g,"&#39;")})'>
-        🔓 Accéder aux détails
-      </button>
+// ============ INFO CARD (Concours / Emploi / Événements — lecture seule) ============
+function infoCard(p) {
+  const img = p.image ? `<img src="${p.image}" alt="${p.title}" loading="lazy" style="width:100%;height:180px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" />` : `<div style="width:100%;height:100px;background:linear-gradient(135deg,#F57C00,#E65100);border-radius:var(--radius) var(--radius) 0 0;display:flex;align-items:center;justify-content:center;font-size:40px">${p.category==="concours-ci"?"📚":p.category==="emploi"?"💼":"🎉"}</div>`;
+  const catLabel = CATEGORIES.find(c=>c[0]===p.category)?.[2] || p.category;
+  const desc = (p.description || "").trim();
+  const pData = JSON.stringify({id:p.id,title:p.title,description:desc,image:p.image||null,category:p.category}).replace(/'/g,"&#39;");
+  return `<div class="info-card" onclick='openInfoDetail(${pData})' style="cursor:pointer">
+    ${img}
+    <div class="info-card-body">
+      <div class="info-card-cat">${catLabel}</div>
+      <div class="info-card-title">${p.title}</div>
+      ${desc ? `<div class="info-card-desc">${desc.slice(0,100)}${desc.length>100?"…":""}</div>` : ""}
     </div>
   </div>`;
 }
 
-function openPaidListing(p) {
+function openInfoDetail(p) {
+  const img = p.image ? `<img src="${p.image}" alt="${p.title}" style="width:100%;max-height:240px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px" />` : "";
+  const catLabel = CATEGORIES.find(c=>c[0]===p.category)?.[2] || p.category;
+  const catIcon = CATEGORIES.find(c=>c[0]===p.category)?.[1] || "📋";
   modalHTML(`
-    <h2>🔒 Offre protégée <button class="modal-close" onclick="closeModal()">✕</button></h2>
-    <div style="background:#F3F4F6;border-radius:var(--radius);padding:14px;margin-bottom:14px">
-      <strong style="font-size:16px">${p.title}</strong>
-    </div>
-    <div style="background:#FFF3E0;border:1.5px solid #FFCC80;border-radius:var(--radius);padding:14px;margin-bottom:16px;font-size:14px;line-height:1.7">
-      <strong>📋 Comment ça marche ?</strong><br>
-      1. Vous ajoutez cette offre à votre panier<br>
-      2. Vous effectuez le paiement (${fmt(p.price)})<br>
-      3. Vous recevez les <strong>détails complets</strong> via WhatsApp immédiatement après confirmation
-    </div>
-    <div class="plisting-price" style="font-size:20px;margin-bottom:14px">${fmt(p.price)}</div>
-    <div class="btn-row">
-      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-primary" onclick='addCart({id:${p.id},name:${JSON.stringify(p.title)},price:${p.price},emoji:"🔒",isPaid:true});closeModal()'>
-        🛒 Acheter — Voir les détails
-      </button>
+    <h2 style="font-size:16px;margin-bottom:4px">${catIcon} ${p.title} <button class="modal-close" onclick="closeModal()">✕</button></h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${catLabel}</div>
+    ${img}
+    ${p.description ? `<div style="font-size:14px;line-height:1.8;color:var(--text);white-space:pre-line;background:#f9f9f9;padding:14px;border-radius:var(--radius)">${p.description}</div>` : ""}
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
     </div>`);
+}
+
+// ============ WHATSAPP ONLY CARD (Annonces / Services / Immobilier) ============
+function waOnlyCard(p) {
+  const wa = (p.whatsapp || "").replace(/\D/g, "");
+  const img = p.image ? `<img src="${p.image}" alt="${p.title||p.name}" loading="lazy" />` : `<span>${p.emoji||"📢"}</span>`;
+  const name = p.name || p.title || "";
+  const desc = (p.description || "").trim();
+  const pData = JSON.stringify({id:p.id,name,description:desc,image:p.image||null,whatsapp:wa,category:p.category||""}).replace(/'/g,"&#39;");
+  const msg = encodeURIComponent(`Bonjour, je suis intéressé par : ${name}`);
+  return `<div class="pcard" onclick='openWaDetail(${pData})' style="cursor:pointer">
+    <div class="pcard-img">${img}</div>
+    <div class="pcard-body">
+      <div class="pcard-name">${name}</div>
+      ${desc ? `<div class="pcard-stock" style="color:var(--muted);font-size:12px;margin-bottom:8px">${desc.slice(0,60)}${desc.length>60?"…":""}</div>` : ""}
+      <div class="pcard-actions">
+        ${wa ? `<button class="btn-wa" style="width:100%;border-radius:20px;padding:8px;font-size:13px;background:#25D366;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msg}','_blank')">💬 Contacter sur WhatsApp</button>` : `<span style="font-size:12px;color:var(--muted)">Aucun contact disponible</span>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+function openWaDetail(p) {
+  const wa = (p.whatsapp || "").replace(/\D/g, "");
+  const img = p.image ? `<img src="${p.image}" alt="${p.name}" style="width:100%;max-height:260px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px" />` : "";
+  const msg = encodeURIComponent(`Bonjour, je suis intéressé par : ${p.name}`);
+  modalHTML(`
+    <h2 style="font-size:17px;margin-bottom:4px">${p.name} <button class="modal-close" onclick="closeModal()">✕</button></h2>
+    ${img}
+    ${p.description ? `<div style="font-size:14px;line-height:1.7;color:var(--text);white-space:pre-line;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:var(--radius)">${p.description}</div>` : ""}
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
+      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="window.open('https://wa.me/${wa}?text=${msg}','_blank')">💬 Contacter sur WhatsApp</button>` : ""}
+    </div>`);
+}
+
+// ============ PAID LISTING CARD (Emploi / Concours-CI — conservé pour compatibilité admin) ============
+function paidListingCard(p) {
+  return infoCard(p);
+}
+
+function openPaidListing(p) {
+  openInfoDetail(p);
 }
 
 // ============ PRODUCT CARD ============
@@ -510,6 +572,27 @@ async function loadRencontresSection() {
   el.innerHTML = profiles.slice(0, 4).map(rencontreCard).join("");
 }
 
+// ============ PAGE 2 TABS : Concours / Actualités / Emploi ============
+let _page2All = null;
+async function switchPage2Tab(cat, btn) {
+  document.querySelectorAll(".page2-tab").forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+  const el = document.getElementById("page2Content");
+  if (!el) return;
+  el.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>`;
+  if (!_page2All) {
+    try { _page2All = await (await fetch("/api/products")).json(); } catch { _page2All = []; }
+  }
+  const items = _page2All.filter(p => p.category === cat || (cat === "actualites" && p.category === "actualites") || (cat === "concours" && p.category === "concours-ci"));
+  const icon = cat === "concours" ? "📚" : cat === "actualites" ? "📰" : "💼";
+  const label = cat === "concours" ? "Concours CI" : cat === "actualites" ? "Actualités" : "Offres d'emploi";
+  if (!items.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-ico">${icon}</div><p>Aucune ${label.toLowerCase()} pour le moment.</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="info-cards-grid">${items.map(p => infoCard(p)).join("")}</div>`;
+}
+
 // ============ RENDER HOME ============
 function renderHome() {
   renderSidebar(document.getElementById("desktopSidebar"));
@@ -520,13 +603,13 @@ function renderHome() {
     `<a href="#" class="shortcut" onclick="filterCat('${cat}');return false;"><span class="ico">${i}</span><span>${n}</span></a>`
   ).join("");
 
+  // Charger la page 2 (onglet Concours par défaut)
+  switchPage2Tab("concours", document.querySelector(".page2-tab.active"));
+
   loadFlashSection();
-  loadPaidSection("concoursGrid", "concours-ci", "📚");
-  loadPaidSection("jobsGrid", "emploi", "💼");
   loadCatSection("realGrid", "immobilier", "🏠", "Aucun bien immobilier disponible.", "products-grid");
   loadTransportSection();
   loadCatSection("restoGrid", "restaurants", "🍽️", "Aucun restaurant disponible.", "products-grid");
-  loadNewsSection();
   loadShop();
   loadRencontresSection();
 }
@@ -577,14 +660,21 @@ async function loadTransportSection() {
     el.innerHTML = `<div class="empty-state"><div class="empty-ico">🚕</div><p>Aucune offre de transport pour le moment.</p></div>`;
     return;
   }
-  el.innerHTML = products.map(p => `
-    <div class="transport-card">
+  el.innerHTML = products.map(p => {
+    const wa = (p.whatsapp || "").replace(/\D/g, "");
+    const msg = encodeURIComponent(`Bonjour, je souhaite commander : ${p.title}`);
+    return `<div class="transport-card">
       <div class="t-ico">${p.image ? `<img src="${p.image}" style="width:60px;height:60px;object-fit:cover;border-radius:50%">` : "🚕"}</div>
       <h4>${p.title}</h4>
       <p style="font-size:12px;color:var(--muted);margin-top:4px">${p.description||""}</p>
-      <button class="btn-add" style="display:block;width:100%;margin-top:12px;border-radius:20px"
-        onclick='addCart({id:${p.id},name:"${p.title.replace(/"/g,"&quot;")}",price:${p.price},emoji:"🚕",whatsapp:"${(p.whatsapp||"").replace(/\D/g,"")}"})'>Commander</button>
-    </div>`).join("");
+      ${p.price > 0 ? `<div style="font-weight:700;color:var(--primary);margin-top:8px">${fmt(p.price)}</div>` : ""}
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn-add" style="flex:1;border-radius:20px"
+          onclick='addCart({id:${p.id},name:"${p.title.replace(/"/g,"&quot;")}",price:${p.price},emoji:"🚕",whatsapp:"${wa}"})'>🛒 Commander</button>
+        ${wa ? `<button class="btn-wa" style="border-radius:20px;padding:8px 14px" onclick="window.open('https://wa.me/${wa}?text=${msg}','_blank')">W</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
 }
 
 // Actualités depuis l'API
@@ -622,7 +712,7 @@ async function loadShop() {
   grid.innerHTML = shopItems.map(p => productCard({ ...p, name: p.title }, false)).join("");
 }
 
-// ============ LOAD PAID SECTIONS (Emploi / Concours) ============
+// ============ LOAD INFO SECTIONS (Emploi / Concours — affichage libre) ============
 async function loadPaidSection(gridId, category, icon) {
   const grid = document.getElementById(gridId);
   if (!grid) return;
@@ -633,13 +723,8 @@ async function loadPaidSection(gridId, category, icon) {
     grid.innerHTML = `<div class="tile-empty"><span>${icon}</span><p>0 offre disponible pour le moment</p></div>`;
     return;
   }
-  grid.innerHTML = items.map(p => `
-    <div class="tile tile-paid" onclick='openPaidListing(${JSON.stringify({id:p.id,title:p.title,price:p.price,category:p.category,ownerName:p.ownerName||"Administrateur"}).replace(/'/g,"&#39;")})'>
-      <div class="tile-lock">🔒</div>
-      <h4>${p.title}</h4>
-      <div class="tile-paid-price">${fmt(p.price)}</div>
-      <span class="tag tag-orange">Payer pour voir les détails</span>
-    </div>`).join("");
+  grid.className = "info-cards-grid";
+  grid.innerHTML = items.map(p => infoCard(p)).join("");
 }
 
 // ============ SEARCH ============
@@ -807,198 +892,15 @@ function openCart() {
     <div class="cart-total-bar"><span>Total</span><span>${fmt(total)}</span></div>
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Continuer</button>
-      <button class="btn btn-primary" onclick="startCheckout()">Commander →</button>
+      <button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="startCheckout()">💬 Commander sur WhatsApp →</button>
     </div>`);
 }
 
 function removeItem(i) { CART.splice(i, 1); saveCart(); openCart(); }
 
-// ============ CHECKOUT ============
-function startCheckout() {
-  // Démarrer la géolocalisation en arrière-plan dès maintenant
-  CHECKOUT = {};
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const lat = pos.coords.latitude.toFixed(6);
-        const lng = pos.coords.longitude.toFixed(6);
-        CHECKOUT._gpsReady = true;
-        CHECKOUT.location = `${lat},${lng}`;
-        CHECKOUT.mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-      },
-      () => { CHECKOUT._gpsFailed = true; },
-      { timeout: 12000, maximumAge: 60000, enableHighAccuracy: true }
-    );
-  }
-  modalHTML(`
-    <h2>📦 Livraison <button class="modal-close" onclick="closeModal()">✕</button></h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Comment souhaitez-vous recevoir votre commande ?</p>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <button class="btn btn-primary btn-lg" onclick="chooseDelivery('agence')">🏢 Retrait à l'agence</button>
-      <button class="btn btn-outline btn-lg" onclick="chooseDelivery('domicile')">🚚 Livraison à domicile</button>
-    </div>`);
-}
-
+// ============ CHECKOUT — Direct WhatsApp ============
 let CHECKOUT = {};
-function chooseDelivery(mode) {
-  CHECKOUT.delivery = mode;
-  if (mode === "agence") return askContact();
-  // Si le GPS a déjà répondu (démarré en arrière-plan dans startCheckout)
-  if (CHECKOUT._gpsReady) return askContact();
-  if (CHECKOUT._gpsFailed) return showLocationError("accès refusé ou indisponible");
-  // Sinon attendre le résultat GPS
-  getLocation();
-}
-function getLocation() {
-  if (!navigator.geolocation) {
-    CHECKOUT.location = "GPS non disponible";
-    return askContact();
-  }
-  modalHTML(`
-    <h2>📍 Localisation en cours… <button class="modal-close" onclick="closeModal()">✕</button></h2>
-    <div style="text-align:center;padding:30px 20px">
-      <div class="spinner" style="margin:0 auto 16px"></div>
-      <p style="font-size:14px;color:var(--muted)">Récupération de votre position GPS…</p>
-      <p style="font-size:12px;color:var(--muted);margin-top:8px">Autorisez la localisation si votre navigateur le demande.</p>
-    </div>`);
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      const lat = pos.coords.latitude.toFixed(6);
-      const lng = pos.coords.longitude.toFixed(6);
-      CHECKOUT._gpsReady = true;
-      CHECKOUT.location = `${lat},${lng}`;
-      CHECKOUT.mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-      askContact();
-    },
-    err => {
-      const reason = err.code === 1 ? "accès refusé" : err.code === 2 ? "position indisponible" : "délai dépassé";
-      showLocationError(reason);
-    },
-    { timeout: 12000, maximumAge: 60000, enableHighAccuracy: true }
-  );
-}
-function showLocationError(reason) {
-  modalHTML(`
-    <h2>📍 Localisation requise <button class="modal-close" onclick="closeModal()">✕</button></h2>
-    <div style="background:#FFF3E0;border:1.5px solid #FFCC80;border-radius:var(--radius);padding:14px;margin-bottom:16px">
-      <strong style="color:var(--primary)">⚠️ Localisation ${reason}</strong>
-      <p style="font-size:13px;margin-top:6px;line-height:1.6">Pour la livraison à domicile, nous avons besoin de votre position GPS.<br>
-      Veuillez activer la localisation dans votre navigateur :</p>
-      <ul style="font-size:13px;margin:8px 0 0 16px;line-height:1.8">
-        <li><strong>Chrome :</strong> Cadenas 🔒 dans la barre d'adresse → Localisation → Autoriser</li>
-        <li><strong>Firefox :</strong> Icône d'emplacement dans la barre → Autoriser</li>
-        <li><strong>Safari :</strong> Réglages → Sites web → Localisation → Autoriser</li>
-      </ul>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <button class="btn btn-primary" onclick="getLocation()">🔄 Réessayer la localisation</button>
-      <button class="btn btn-ghost" style="font-size:13px" onclick="skipLocation()">Continuer sans localisation (entrer l'adresse manuellement)</button>
-      <button class="btn btn-ghost" onclick="startCheckout()">← Retour</button>
-    </div>`);
-}
-function skipLocation() {
-  CHECKOUT.location = "Adresse manuelle";
-  CHECKOUT.mapsUrl = null;
-  askContact();
-}
-function askContact() {
-  const isHome = CHECKOUT.delivery === "domicile";
-  const hasGPS = CHECKOUT.location && CHECKOUT.location !== "Adresse manuelle" && CHECKOUT.location !== "GPS non disponible";
-  const gpsBanner = isHome
-    ? hasGPS
-      ? `<div style="background:#E8F5E9;border:1.5px solid #81C784;border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:13px">
-           <span style="font-size:20px">📍</span>
-           <div>
-             <strong style="color:var(--secondary)">Position GPS capturée ✓</strong><br>
-             <span style="color:var(--muted)">Coordonnées : ${CHECKOUT.location}</span>
-             ${CHECKOUT.mapsUrl ? `&nbsp;— <a href="${CHECKOUT.mapsUrl}" target="_blank" style="color:var(--info)">Voir sur la carte</a>` : ""}
-           </div>
-         </div>`
-      : `<div style="background:#FFF3E0;border:1.5px solid #FFCC80;border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:13px">
-           ⚠️ Localisation non capturée — précisez bien votre adresse ci-dessous.
-         </div>`
-    : "";
-  modalHTML(`
-    <h2>📝 Vos coordonnées <button class="modal-close" onclick="closeModal()">✕</button></h2>
-    ${gpsBanner}
-    <div class="form-group"><label>Nom complet *</label><input id="coName" placeholder="Jean Kouassi" /></div>
-    <div class="form-group"><label>Téléphone *</label><input id="coPhone" placeholder="07 00 00 00 00" type="tel" /></div>
-    <div class="form-group">
-      <label>${isHome ? "Quartier / Adresse de livraison" : "Adresse (optionnel)"}</label>
-      <input id="coAddr" placeholder="${isHome ? "Quartier, rue, point de repère précis…" : "Quartier, repère…"}" />
-    </div>
-    <div class="btn-row" style="margin-top:16px">
-      <button class="btn btn-ghost" onclick="startCheckout()">← Retour</button>
-      <button class="btn btn-primary" onclick="showPayment()">Continuer →</button>
-    </div>`);
-}
-function showPayment() {
-  CHECKOUT.name = document.getElementById("coName").value.trim();
-  CHECKOUT.phone = document.getElementById("coPhone").value.trim();
-  CHECKOUT.address = document.getElementById("coAddr").value.trim();
-  if (!CHECKOUT.name || !CHECKOUT.phone) return toast("Veuillez remplir nom et téléphone", "red");
-  if (!isValidCIPhone(CHECKOUT.phone)) return toast("Le téléphone doit être un numéro ivoirien (+225 XXXXXXXXXX)", "red");
-  // Générer un lien Maps depuis l'adresse manuelle si pas de GPS
-  if (!CHECKOUT.mapsUrl && CHECKOUT.address) {
-    const query = encodeURIComponent(CHECKOUT.address + ", Abengourou, Côte d'Ivoire");
-    CHECKOUT.mapsUrl = `https://www.google.com/maps/search/${query}`;
-  }
-  modalHTML(`
-    <h2>💳 Paiement <button class="modal-close" onclick="closeModal()">✕</button></h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Choisissez votre mode de paiement :</p>
-    <div class="pay-grid">
-      <div class="pay-opt" onclick="selectPay(this,'Wave')"><div class="pay-logo wave-c">Wave</div><div class="pay-nm">Wave</div></div>
-      <div class="pay-opt" onclick="selectPay(this,'Orange Money')"><div class="pay-logo orange-c">OM</div><div class="pay-nm">Orange Money</div></div>
-      <div class="pay-opt" onclick="selectPay(this,'MTN MoMo')"><div class="pay-logo mtn-c" style="color:#000">MTN</div><div class="pay-nm">MTN MoMo</div></div>
-      <div class="pay-opt" onclick="selectPay(this,'Moov Money')"><div class="pay-logo moov-c">Moov</div><div class="pay-nm">Moov Money</div></div>
-    </div>
-    <div class="form-group" style="margin-top:14px"><label>Numéro mobile money *</label><input id="payNum" placeholder="07 00 00 00 00" type="tel" /></div>
-    <div style="background:#FFF3E0;border-radius:var(--radius);padding:10px 12px;font-size:13px;margin-top:10px">
-      💰 Total à payer : <strong>${fmt(CART.reduce((s,i)=>s+i.price*i.qty,0))}</strong>
-    </div>
-    <div class="btn-row" style="margin-top:14px">
-      <button class="btn btn-ghost" onclick="askContact()">← Retour</button>
-      <button class="btn btn-primary" onclick="finalizeOrder()">✓ Confirmer la commande</button>
-    </div>`);
-}
-function selectPay(el, name) {
-  document.querySelectorAll(".pay-opt").forEach(o => o.classList.remove("sel"));
-  el.classList.add("sel");
-  CHECKOUT.payMethod = name;
-}
-function showPaymentProgress() {
-  // Remplace le bouton Confirmer par une barre de progression
-  const btn = document.querySelector("#modalBody .btn-primary[onclick='finalizeOrder()']");
-  if (btn) {
-    const wrap = document.createElement("div");
-    wrap.id = "orderProgressWrap";
-    wrap.className = "progress-wrap";
-    wrap.innerHTML = `<p>⏳ Enregistrement de la commande…</p><div class="progress-track"><div class="progress-fill" id="orderProgressFill"></div></div>`;
-    btn.parentNode.replaceChild(wrap, btn);
-  }
-  return startProgress("orderProgressFill");
-}
-
-async function finalizeOrder() {
-  if (!CHECKOUT.payMethod) return toast("Choisissez un mode de paiement", "red");
-  CHECKOUT.payNum = document.getElementById("payNum").value.trim();
-  if (!CHECKOUT.payNum) return toast("Entrez votre numéro mobile money", "red");
-  if (!isValidCIPhone(CHECKOUT.payNum)) return toast("Le numéro mobile money doit être un numéro ivoirien (+225)", "red");
-
-  const bar = showPaymentProgress();
-  const total = CART.reduce((s, i) => s + i.price * i.qty, 0);
-  const order = { ...CHECKOUT, items: CART, total };
-
-  // Sauvegarder en base de données
-  try { await fetch("/api/orders", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(order) }); } catch {}
-
-  // Construire le message WhatsApp
-  const buildMsg = (items) => {
-    const t = items.reduce((s,i)=>s+i.price*i.qty,0);
-    return `🛒 *Nouvelle commande ABENGOUROU-MARKET.CI*%0A👤 ${order.name} (${order.phone})%0A📍 ${order.delivery==="domicile"?"Livraison : "+(order.address||"")+(order.mapsUrl?" "+order.mapsUrl:""):"Retrait à l'agence"}%0A%0A📦 Articles :%0A${items.map(i=>`• ${i.qty}× ${i.name} — ${fmt(i.price*i.qty)}`).join("%0A")}%0A%0A💰 Total : ${fmt(t)}%0A💳 Paiement : ${order.payMethod} (${order.payNum})`;
-  };
-
-  // Grouper par WhatsApp vendeur : Rencontres → numéro fixe, autres → WA du produit
+function startCheckout() {
   const waGroups = {};
   for (const item of CART) {
     const wa = item.isRencontre ? RENCONTRES_WA : (item.whatsapp || "");
@@ -1008,8 +910,20 @@ async function finalizeOrder() {
     }
   }
 
-  bar.done(true);
-  await new Promise(r => setTimeout(r, 350));
+  if (Object.keys(waGroups).length === 0) {
+    toast("Aucun numéro WhatsApp disponible pour ces articles", "red");
+    return;
+  }
+
+  const buildMsg = (items) => {
+    const t = items.reduce((s,i) => s + i.price * i.qty, 0);
+    const lines = items.map(i => `• ${i.qty}× ${i.name} — ${fmt(i.price * i.qty)}`).join("%0A");
+    return `🛒 *Nouvelle commande ABENGOUROU-MARKET*%0A%0A📦 Articles :%0A${lines}%0A%0A💰 Total : ${fmt(t)}`;
+  };
+
+  // Enregistrer en base de données
+  const total = CART.reduce((s, i) => s + i.price * i.qty, 0);
+  try { fetch("/api/orders", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ items: CART, total, delivery: "whatsapp", name: "", phone: "", payMethod: "" }) }); } catch {}
 
   // Ouvrir WhatsApp pour chaque vendeur
   for (const [wa, items] of Object.entries(waGroups)) {
@@ -1017,13 +931,109 @@ async function finalizeOrder() {
   }
 
   CART = []; saveCart(); CHECKOUT = {};
-  modalHTML(`
-    <div style="text-align:center;padding:20px">
-      <div style="font-size:64px">✅</div>
-      <h2 style="color:var(--secondary);margin-top:12px">Commande confirmée !</h2>
-      <p style="margin:12px 0;color:var(--muted);font-size:14px">Votre commande a été enregistrée. Le vendeur va vous contacter sous peu.</p>
-      <button class="btn btn-primary btn-lg" onclick="closeModal();showHome()">Retour à l'accueil</button>
-    </div>`);
+  closeModal();
+  toast("✓ Commande envoyée sur WhatsApp !", "green");
+}
+
+// ============ SANTÉ — Page spéciale ============
+async function showSantePage() {
+  showPage("page-category");
+  const wrap = document.getElementById("catPageContent");
+  wrap.innerHTML = `
+    <div class="cat-page-header">
+      <span class="cat-page-icon">🏥</span>
+      <div><h2>Santé</h2><p>Pharmacies de garde · Hôpitaux de proximité · Abengourou</p></div>
+    </div>
+    <div class="section-block">
+      <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+    </div>`;
+
+  let all = [];
+  try { all = await (await fetch("/api/products")).json(); } catch {}
+  const items = all.filter(p => p.category === "sante");
+
+  const pharmacies = items.filter(p => (p.title || "").toLowerCase().includes("pharmac") || (p.description || "").toLowerCase().includes("pharmac") || (p.title || "").toLowerCase().includes("garde"));
+  const hopitaux = items.filter(p => !pharmacies.includes(p));
+
+  const pharmacieHtml = pharmacies.length
+    ? pharmacies.map(p => waOnlyCard({...p, name: p.title})).join("")
+    : `<div class="sante-static-card">
+        <div class="sante-icon">💊</div>
+        <h4>Pharmacie Principale d'Abengourou</h4>
+        <p>Centre-ville, Abengourou</p>
+        <p style="font-size:12px;color:var(--muted)">Horaires de garde : 20h – 07h et week-ends</p>
+      </div>`;
+
+  const hopitalHtml = hopitaux.length
+    ? hopitaux.map(p => waOnlyCard({...p, name: p.title})).join("")
+    : `<div class="sante-static-card">
+        <div class="sante-icon">🏥</div>
+        <h4>Hôpital Général d'Abengourou (HGA)</h4>
+        <p>Abengourou, Côte d'Ivoire</p>
+        <p style="font-size:12px;color:var(--muted)">Urgences 24h/24 · 7j/7</p>
+      </div>
+      <div class="sante-static-card">
+        <div class="sante-icon">🏥</div>
+        <h4>Centre de Santé Urbain d'Abengourou</h4>
+        <p>Centre-ville, Abengourou</p>
+        <p style="font-size:12px;color:var(--muted)">Consultations · Soins de proximité</p>
+      </div>`;
+
+  wrap.querySelector(".section-block").innerHTML = `
+    <div class="sante-section">
+      <h3 class="sante-title">💊 Pharmacies de garde</h3>
+      <div class="sante-grid">${pharmacieHtml}</div>
+    </div>
+    <div class="sante-section" style="margin-top:24px">
+      <h3 class="sante-title">🏥 Hôpitaux de proximité</h3>
+      <div class="sante-grid">${hopitalHtml}</div>
+    </div>`;
+}
+
+// ============ SCOLAIRES — Page avec sous-catégories ============
+async function showScolairesPage() {
+  showPage("page-category");
+  const wrap = document.getElementById("catPageContent");
+  wrap.innerHTML = `
+    <div class="cat-page-header">
+      <span class="cat-page-icon">🎓</span>
+      <div><h2>Scolaires</h2><p>Collèges · Grandes Écoles · Cours particuliers · Abengourou</p></div>
+    </div>
+    <div class="scolaire-subcats">
+      <button class="scolaire-btn active" onclick="showScolairesSub('college', this)">🏫 Collèges &amp; Lycées</button>
+      <button class="scolaire-btn" onclick="showScolairesSub('grande-ecole', this)">🎓 Grandes Écoles</button>
+      <button class="scolaire-btn" onclick="showScolairesSub('cours', this)">📖 Cours particuliers</button>
+    </div>
+    <div id="scolaireContent" class="section-block">
+      <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+    </div>`;
+
+  showScolairesSub("college", document.querySelector(".scolaire-btn.active"));
+}
+
+async function showScolairesSub(sub, btn) {
+  document.querySelectorAll(".scolaire-btn").forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+
+  const el = document.getElementById("scolaireContent");
+  el.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>`;
+
+  let all = [];
+  try { all = await (await fetch("/api/products")).json(); } catch {}
+  const items = all.filter(p => p.category === "scolaires" && (
+    sub === "college" ? (p.title||"").toLowerCase().match(/coll[eè]ge|lyc[eé]e|secondaire|6e|terminale/) || !(p.title||"").toLowerCase().match(/grande.*[eé]cole|cours|formation|universit/) :
+    sub === "grande-ecole" ? (p.title||"").toLowerCase().match(/grande.*[eé]cole|universit|[eé]cole.*sup|iut|inphb|ena|infas|bts/) :
+    (p.title||"").toLowerCase().match(/cours|r[eé]p[eé]tition|soutien|tutorat|formation/)
+  ));
+
+  const subLabel = sub === "college" ? "Collèges & Lycées" : sub === "grande-ecole" ? "Grandes Écoles" : "Cours particuliers";
+  const subIcon = sub === "college" ? "🏫" : sub === "grande-ecole" ? "🎓" : "📖";
+
+  if (!items.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-ico">${subIcon}</div><p>Aucune annonce pour <strong>${subLabel}</strong> pour le moment.</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">${items.length} établissement${items.length>1?"s":""}</div><div class="products-grid">${items.map(p => waOnlyCard({...p, name:p.title})).join("")}</div>`;
 }
 
 // ============ ACCOUNT ============

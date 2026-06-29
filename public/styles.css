@@ -494,3 +494,39 @@ footer { background: #212121; color: #bdbdbd; margin-top: 40px; }
 .progress-fill { height:100%; border-radius:99px; width:5%; transition:width .18s linear; }
 .progress-wrap { padding:10px 0 4px; }
 .progress-wrap p { font-size:13px; color:var(--muted); margin-bottom:4px; }
+
+/* ===== INFO CARDS (Concours / Emploi / Événements) ===== */
+.info-cards-grid { display:grid; grid-template-columns: repeat(2,1fr); gap:12px; }
+@media (min-width:640px) { .info-cards-grid { grid-template-columns: repeat(3,1fr); } }
+@media (min-width:1024px) { .info-cards-grid { grid-template-columns: repeat(4,1fr); } }
+.info-card { background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); overflow:hidden; border:1.5px solid var(--border); transition:transform .2s, box-shadow .2s; }
+.info-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-lg); }
+.info-card-body { padding:12px; }
+.info-card-cat { font-size:11px; font-weight:700; text-transform:uppercase; color:var(--primary); letter-spacing:.5px; margin-bottom:4px; }
+.info-card-title { font-size:14px; font-weight:700; color:var(--text); line-height:1.35; }
+.info-card-desc { font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5; }
+
+/* ===== PAGE 2 TABS (Concours / Actualités / Emploi) ===== */
+.page2-section { padding-top:4px; }
+.page2-tabs { display:flex; gap:6px; overflow-x:auto; padding-bottom:10px; scrollbar-width:none; }
+.page2-tabs::-webkit-scrollbar { display:none; }
+.page2-tab { white-space:nowrap; padding:8px 16px; border-radius:20px; border:1.5px solid var(--border); background:#fff; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; transition:all .15s; flex-shrink:0; }
+.page2-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.page2-tab:hover:not(.active) { border-color:var(--primary); color:var(--primary); }
+
+/* ===== SANTÉ ===== */
+.sante-section { }
+.sante-title { font-size:16px; font-weight:700; color:var(--text); margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+.sante-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+@media (min-width:640px) { .sante-grid { grid-template-columns:repeat(3,1fr); } }
+.sante-static-card { background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:16px; border:1.5px solid var(--border); text-align:center; }
+.sante-icon { font-size:36px; margin-bottom:8px; }
+.sante-static-card h4 { font-size:14px; font-weight:700; margin-bottom:4px; color:var(--text); }
+.sante-static-card p { font-size:12px; color:var(--muted); line-height:1.4; }
+
+/* ===== SCOLAIRES ===== */
+.scolaire-subcats { display:flex; gap:8px; overflow-x:auto; padding:12px 0; scrollbar-width:none; }
+.scolaire-subcats::-webkit-scrollbar { display:none; }
+.scolaire-btn { white-space:nowrap; padding:9px 18px; border-radius:20px; border:1.5px solid var(--border); background:#fff; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; transition:all .15s; flex-shrink:0; }
+.scolaire-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.scolaire-btn:hover:not(.active) { border-color:var(--primary); color:var(--primary); }
