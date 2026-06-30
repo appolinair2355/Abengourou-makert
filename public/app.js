@@ -12,7 +12,7 @@ const CATEGORIES = [
   ["agriculture","🌾","Agriculture"],
   ["services","👨‍🔧","Services"],
   ["scolaires","🎓","Scolaires"],
-  ["sante","🏥","Santé"],
+  ["sante","🏥","Appel Santé"],
   ["evenements","🎉","Événements"],
   ["annonces","📢","Annonces"],
   ["actualites","📰","Actualités"],
@@ -21,6 +21,7 @@ const CATEGORIES = [
   ["transport","🚕","Transport"],
   ["braderie","🏷️","Braderie"],
   ["rencontres","❤️","Rencontres & Amitiés"],
+  ["pronostics","🎯","Pronostics"],
 ];
 
 const SHORTCUTS = [
@@ -44,6 +45,7 @@ let CAT_CONFIG = {}; // Config gratuit/payant par catégorie, chargée depuis le
 const CONFIG_CATS = [
   ["concours-ci","📚","Concours CI"],
   ["emploi","💼","Emploi"],
+  ["pronostics","🎯","Pronostics"],
   ["evenements","🎉","Événements"],
   ["annonces","📢","Annonces"],
   ["services","🔧","Services"],
@@ -54,6 +56,15 @@ const CONFIG_CATS = [
   ["rencontres","❤️","Rencontres & Amitiés"],
   ["braderie","🏷️","Braderie"],
   ["restaurants","🍽️","Restaurants"],
+  ["vehicules","🚗","Véhicules & Motos"],
+  ["telephones","📱","Téléphones"],
+  ["informatique","💻","Informatique"],
+  ["mode","👕","Mode & Beauté"],
+  ["supermarche","🛒","Supermarché"],
+  ["agriculture","🌾","Agriculture"],
+  ["scolaires","🎓","Scolaires"],
+  ["sante","🏥","Appel Santé"],
+  ["actualites","📰","Actualités"],
 ];
 
 (async () => {
@@ -129,6 +140,7 @@ function catMode(cat) {
   if (cat === "residences") return "reserve";
   if (cat === "sante") return "sante";
   if (cat === "scolaires") return "scolaires";
+  if (cat === "pronostics") return "pronostics";
   return "order"; // marchandises, transport, braderie, restaurants…
 }
 
@@ -137,6 +149,7 @@ async function filterCat(cat) {
   if (cat === "rencontres") return showRencontresPage();
   if (cat === "sante") return showSantePage();
   if (cat === "scolaires") return showScolairesPage();
+  if (cat === "pronostics") return showPronosticsPage();
 
   const catInfo = CATEGORIES.find(c => c[0] === cat) || [cat, "🗂️", cat];
   const [slug, icon, label] = catInfo;
@@ -346,12 +359,13 @@ function reserveCard(p) {
   </div>`;
 }
 
-// ============ LOCKED CARD (catégorie payante — voir via WhatsApp admin) ============
+// ============ LOCKED CARD (catégorie payante — voir via WhatsApp) ============
 function lockedCard(p, price, catSlug) {
   const img = p.image ? `<img src="${p.image}" alt="${p.title||p.name}" loading="lazy" style="filter:blur(3px)" />` : `<span>🔒</span>`;
   const name = p.title || p.name || "";
   const catInfo = CATEGORIES.find(c=>c[0]===catSlug);
   const catLabel = catInfo?.[2] || catSlug;
+  const contactWA = ((p.whatsapp||"").replace(/\D/g,"")) || RENCONTRES_WA;
   const msg = encodeURIComponent(`Bonjour, je souhaite accéder à l'annonce "${name}" dans la catégorie ${catLabel}. Paiement : ${fmt(price)}.`);
   return `<div class="pcard locked-card">
     <div class="pcard-img locked-img">${img}<div class="lock-overlay">🔒</div></div>
@@ -359,7 +373,7 @@ function lockedCard(p, price, catSlug) {
       <div class="pcard-name">${name}</div>
       <div class="locked-badge">Accès payant</div>
       <div class="locked-price">${fmt(price)}</div>
-      <button class="btn-locked" onclick="window.open('https://wa.me/${RENCONTRES_WA}?text=${msg}','_blank')">
+      <button class="btn-locked" onclick="window.open('https://wa.me/${contactWA}?text=${msg}','_blank')">
         💬 Obtenir l'accès — ${fmt(price)}
       </button>
     </div>
@@ -386,7 +400,7 @@ function productCard(p, isFlash = false) {
     </div>
     <div class="pcard-body">
       <div class="pcard-name">${name}</div>
-      <div class="pcard-price">${fmt(p.price)}</div>
+      ${p.price > 0 ? `<div class="pcard-price">${fmt(p.price)}</div>` : ""}
       ${p.oldPrice ? `<div class="pcard-oldprice">${fmt(p.oldPrice)}</div>` : ""}
       ${isFlash && p.stock > 0 ? `<div class="stock-bar"><span style="width:${pct}%"></span></div><div class="pcard-stock">${p.stock} restants</div>` : (!isFlash && p.stock > 0 ? `<div class="pcard-stock">${p.stock} en stock</div>` : "")}
       <div class="pcard-actions">
@@ -420,13 +434,64 @@ function openProductDetail(p) {
 // ============ RENCONTRES ============
 const RENCONTRE_SOUS = { amitie: "💙 Amitié", serieux: "❤️ Relation sérieuse" };
 
+function rencontreAvatar(sexe) {
+  const isFemme = (sexe||"").toLowerCase().startsWith("f");
+  const bg = isFemme
+    ? "linear-gradient(135deg,#f8bbd0,#e91e8c)"
+    : "linear-gradient(135deg,#bbdefb,#1565c0)";
+  const svgBody = isFemme ? `
+    <circle cx="50" cy="50" r="50" fill="url(#bg)"/>
+    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8bbd0"/><stop offset="100%" stop-color="#e91e8c"/></linearGradient></defs>
+    <!-- visage -->
+    <circle cx="50" cy="34" r="18" fill="#FFCC99"/>
+    <!-- cheveux longs -->
+    <ellipse cx="50" cy="20" rx="20" ry="14" fill="#4e342e"/>
+    <rect x="30" y="20" width="6" height="28" rx="3" fill="#4e342e"/>
+    <rect x="64" y="20" width="6" height="28" rx="3" fill="#4e342e"/>
+    <!-- yeux -->
+    <circle cx="43" cy="33" r="3" fill="#fff"/><circle cx="43" cy="33" r="1.5" fill="#333"/>
+    <circle cx="57" cy="33" r="3" fill="#fff"/><circle cx="57" cy="33" r="1.5" fill="#333"/>
+    <!-- joues -->
+    <circle cx="38" cy="38" r="4" fill="#f48fb1" opacity="0.5"/>
+    <circle cx="62" cy="38" r="4" fill="#f48fb1" opacity="0.5"/>
+    <!-- bouche -->
+    <path d="M44 41 Q50 46 56 41" stroke="#c2185b" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <!-- corps robe -->
+    <path d="M28 100 Q30 68 50 65 Q70 68 72 100Z" fill="#e91e8c"/>
+  ` : `
+    <circle cx="50" cy="50" r="50" fill="url(#bg)"/>
+    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#bbdefb"/><stop offset="100%" stop-color="#1565c0"/></linearGradient></defs>
+    <!-- visage -->
+    <circle cx="50" cy="34" r="18" fill="#FFCC99"/>
+    <!-- cheveux courts -->
+    <ellipse cx="50" cy="18" rx="18" ry="10" fill="#3e2723"/>
+    <rect x="32" y="16" width="36" height="10" rx="5" fill="#3e2723"/>
+    <!-- yeux -->
+    <circle cx="43" cy="33" r="3" fill="#fff"/><circle cx="43" cy="33" r="1.5" fill="#333"/>
+    <circle cx="57" cy="33" r="3" fill="#fff"/><circle cx="57" cy="33" r="1.5" fill="#333"/>
+    <!-- sourcils -->
+    <path d="M40 28 Q43 26 46 28" stroke="#3e2723" stroke-width="1.5" fill="none"/>
+    <path d="M54 28 Q57 26 60 28" stroke="#3e2723" stroke-width="1.5" fill="none"/>
+    <!-- bouche -->
+    <path d="M45 41 Q50 45 55 41" stroke="#bf360c" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <!-- corps chemise -->
+    <path d="M30 100 Q32 66 50 63 Q68 66 70 100Z" fill="#1565c0"/>
+    <rect x="46" y="63" width="8" height="20" fill="#e3f2fd"/>
+  `;
+  return `<div class="rcard-avatar" style="background:${bg}">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%">${svgBody}</svg>
+  </div>`;
+}
+
 function rencontreCard(p) {
   const sousLabel = RENCONTRE_SOUS[p.souscat] || "❤️ Rencontre";
   const sousCls   = p.souscat === "serieux" ? "rcat-serieux" : "rcat-amitie";
   const descShort = (p.descShort || "").slice(0, 130);
-  const pData = JSON.stringify({id:p.id,displayName:p.displayName,age:p.age,profession:p.profession,ville:p.ville,quartier:p.quartier,souscat:p.souscat,prixAcces:p.prixAcces,descShort:p.descShort||""}).replace(/'/g,"&#39;");
+  const pData = JSON.stringify({id:p.id,displayName:p.displayName,age:p.age,profession:p.profession,ville:p.ville,quartier:p.quartier,souscat:p.souscat,prixAcces:p.prixAcces,descShort:p.descShort||"",sexe:p.sexe||""}).replace(/'/g,"&#39;");
   return `<div class="rcard" onclick='openRencontreDetail(${pData})'>
-    <div class="rcard-heart">❤️</div>
+    ${rencontreAvatar(p.sexe)}
     <div class="rcard-body">
       <div class="rcard-name">${p.displayName}</div>
       <div class="rcard-info">
@@ -445,10 +510,11 @@ function rencontreCard(p) {
 
 function openRencontreDetail(p) {
   const sousLabel = RENCONTRE_SOUS[p.souscat] || "❤️ Rencontre";
+  const avatarHtml = rencontreAvatar(p.sexe || "");
   modalHTML(`
     <h2>❤️ Profil Rencontres <button class="modal-close" onclick="closeModal()">✕</button></h2>
     <div style="background:linear-gradient(135deg,#fce4ec,#fff8f8);border-radius:var(--radius);padding:16px;margin-bottom:14px;text-align:center">
-      <div style="font-size:48px;margin-bottom:8px">❤️</div>
+      <div style="width:90px;height:90px;border-radius:50%;overflow:hidden;margin:0 auto 10px;box-shadow:0 4px 16px rgba(194,24,91,.25)">${avatarHtml}</div>
       <div style="font-size:20px;font-weight:700;color:#c2185b">${p.displayName}</div>
       <div style="font-size:13px;color:#777;margin-top:4px">
         ${p.age ? p.age+" ans" : ""}${p.profession ? " · "+p.profession : ""}${p.ville ? " · "+p.ville : ""}
@@ -639,6 +705,57 @@ async function loadRencontresSection() {
   el.innerHTML = profiles.slice(0, 4).map(rencontreCard).join("");
 }
 
+// ============ PRONOSTICS PAGE ============
+async function showPronosticsPage() {
+  showPage("page-category");
+  const wrap = document.getElementById("catPageContent");
+  wrap.innerHTML = `
+    <div class="cat-page-header">
+      <span class="cat-page-icon">🎯</span>
+      <div><h2>Pronostics</h2><p>Pronostics sportifs et jeux virtuels · Abengourou</p></div>
+    </div>
+    <div class="section-block">
+      <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+    </div>`;
+
+  let all = [];
+  try { all = await (await fetch("/api/products")).json(); } catch {}
+  const products = all.filter(p => p.category === "pronostics");
+
+  if (!products.length) {
+    wrap.querySelector(".section-block").innerHTML = `
+      <div class="empty-state">
+        <div class="empty-ico">🎯</div>
+        <p>Aucun pronostic disponible pour le moment.</p>
+      </div>`;
+    return;
+  }
+
+  const cardsHtml = products.map(p => {
+    if (Number(p.price) > 0) {
+      return lockedCard(p, Number(p.price), "pronostics");
+    }
+    return pronosticFreeCard(p);
+  }).join("");
+
+  wrap.querySelector(".section-block").innerHTML = `
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${products.length} pronostic${products.length>1?"s":""} disponible${products.length>1?"s":""}</div>
+    <div class="info-cards-grid">${cardsHtml}</div>`;
+}
+
+function pronosticFreeCard(p) {
+  const desc = (p.description || "").trim();
+  const pData = JSON.stringify({id:p.id,title:p.title,description:desc,image:p.image||null,category:"pronostics"}).replace(/'/g,"&#39;");
+  return `<div class="info-card" onclick='openInfoDetail(${pData})' style="cursor:pointer">
+    <div style="background:linear-gradient(135deg,#1a237e,#283593);padding:16px;border-radius:var(--radius) var(--radius) 0 0;color:#fff;text-align:center;font-size:36px">🎯</div>
+    <div class="info-card-body">
+      <div class="info-card-cat" style="color:#1a237e">🎯 Pronostic Gratuit</div>
+      <div class="info-card-title">${p.title}</div>
+      ${desc ? `<div class="info-card-desc" style="white-space:pre-line">${desc.slice(0,220)}${desc.length>220?"…":""}</div>` : ""}
+    </div>
+  </div>`;
+}
+
 // ============ PAGE 2 TABS : Concours / Actualités / Emploi ============
 let _page2All = null;
 async function switchPage2Tab(cat, btn) {
@@ -678,6 +795,7 @@ function renderHome() {
   loadTransportSection();
   loadCatSection("restoGrid", "restaurants", "🍽️", "Aucun restaurant disponible.", "products-grid");
   loadShop();
+  loadServicesSection();
   loadRencontresSection();
 }
 
@@ -764,19 +882,81 @@ async function loadNewsSection() {
     </li>`).join("");
 }
 
-// ============ LOAD SHOP (API) ============
+// ============ LOAD SHOP (API) — vue par catégories ============
+const SHOP_EXCLUDED = new Set(["rencontres","sante","scolaires","pronostics","transport","immobilier","restaurants","actualites","concours-ci","emploi","recrutement"]);
+
 async function loadShop() {
   const grid = document.getElementById("shopGrid");
   if (!grid) return;
   let products = [];
   try { products = await (await fetch("/api/products")).json(); } catch {}
-  // Exclure les offres emploi/concours de la boutique principale
-  const shopItems = products.filter(p => !PAID_CATS.has(p.category));
+
+  const shopItems = products.filter(p => !SHOP_EXCLUDED.has(p.category) && !PAID_CATS.has(p.category));
   if (!shopItems.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-ico">🛍️</div><p>Aucun article en ligne pour le moment.</p></div>`;
+    grid.style.display = "block";
+    grid.innerHTML = `<div class="empty-state"><div class="empty-ico">🛍️</div><p>Aucun article en ligne pour le moment.</p></div>`;
     return;
   }
-  grid.innerHTML = shopItems.map(p => productCard({ ...p, name: p.title }, false)).join("");
+
+  // Grouper par catégorie
+  const byCat = {};
+  for (const p of shopItems) {
+    if (!byCat[p.category]) byCat[p.category] = [];
+    byCat[p.category].push(p);
+  }
+
+  grid.style.display = "block";
+  grid.innerHTML = Object.entries(byCat).map(([slug, items]) => {
+    const catInfo = CATEGORIES.find(c => c[0] === slug) || [slug, "🛍️", slug];
+    const [, icon, label] = catInfo;
+    const previewCards = items.slice(0, 4).map(p => productCard({...p, name: p.title}, false)).join("");
+    const moreCount = items.length > 4 ? items.length - 4 : 0;
+    return `<div class="shop-cat-block" id="shopblock-${slug}">
+      <div class="shop-cat-header">
+        <span class="shop-cat-icon">${icon}</span>
+        <div>
+          <h3>${label}</h3>
+          <small style="color:var(--muted)">${items.length} article${items.length>1?"s":""}</small>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}')">Voir tout →</button>
+      </div>
+      <div class="products-grid shop-cat-grid">${previewCards}</div>
+      ${moreCount > 0 ? `<div style="text-align:center;margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}')">+ ${moreCount} autre${moreCount>1?"s":""} article${moreCount>1?"s":""}</button></div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+// ============ SECTION SERVICES & ANNONCES ============
+async function loadServicesSection() {
+  const grid = document.getElementById("servicesGrid");
+  if (!grid) return;
+  const SERVICE_CATS = ["services","annonces","evenements"];
+  let all = [];
+  try { all = await (await fetch("/api/products")).json(); } catch {}
+  const items = all.filter(p => SERVICE_CATS.includes(p.category));
+  if (!items.length) {
+    grid.style.display = "block";
+    grid.innerHTML = `<div class="empty-state"><div class="empty-ico">📋</div><p>Aucun service disponible pour le moment.</p></div>`;
+    return;
+  }
+  const byCat = {};
+  for (const p of items) { if (!byCat[p.category]) byCat[p.category] = []; byCat[p.category].push(p); }
+  grid.style.display = "block";
+  grid.innerHTML = Object.entries(byCat).map(([slug, catItems]) => {
+    const catInfo = CATEGORIES.find(c => c[0] === slug) || [slug, "📋", slug];
+    const [, icon, label] = catInfo;
+    const cards = catItems.slice(0,4).map(p => waOnlyCard({...p, name: p.title})).join("");
+    const more = catItems.length > 4 ? catItems.length - 4 : 0;
+    return `<div class="shop-cat-block">
+      <div class="shop-cat-header" style="background:linear-gradient(135deg,#1565c0,#283593)">
+        <span class="shop-cat-icon">${icon}</span>
+        <div><h3>${label}</h3><small style="color:rgba(255,255,255,.8)">${catItems.length} service${catItems.length>1?"s":""}</small></div>
+        <button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}')">Voir tout →</button>
+      </div>
+      <div class="products-grid shop-cat-grid">${cards}</div>
+      ${more > 0 ? `<div style="text-align:center;padding:8px"><button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}')">+ ${more} autre${more>1?"s":""}</button></div>` : ""}
+    </div>`;
+  }).join("");
 }
 
 // ============ LOAD INFO SECTIONS (Emploi / Concours — affichage libre) ============
@@ -1003,58 +1183,105 @@ function startCheckout() {
 }
 
 // ============ SANTÉ — Page spéciale ============
+const CI_CITIES = [
+  "Abengourou","Abidjan","Yamoussoukro","Bouaké","Daloa","San-Pédro",
+  "Korhogo","Man","Gagnoa","Divo","Aboisso","Bondoukou","Dimbokro",
+  "Agboville","Adzopé","Bingerville","Grand-Bassam","Sassandra",
+  "Soubré","Sinfra","Séguéla","Odienné","Ferkessédougou","Lakota",
+  "Issia","Touba","Vavoua","Katiola","Daoukro","Tiassalé"
+];
+
 async function showSantePage() {
   showPage("page-category");
   const wrap = document.getElementById("catPageContent");
   wrap.innerHTML = `
     <div class="cat-page-header">
       <span class="cat-page-icon">🏥</span>
-      <div><h2>Santé</h2><p>Pharmacies de garde · Hôpitaux de proximité · Abengourou</p></div>
+      <div><h2>Appel Santé CI</h2><p>Pharmacies · Hôpitaux · Cliniques · Côte d'Ivoire</p></div>
     </div>
-    <div class="section-block">
-      <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
-    </div>`;
-
-  let all = [];
-  try { all = await (await fetch("/api/products")).json(); } catch {}
-  const items = all.filter(p => p.category === "sante");
-
-  const pharmacies = items.filter(p => (p.title || "").toLowerCase().includes("pharmac") || (p.description || "").toLowerCase().includes("pharmac") || (p.title || "").toLowerCase().includes("garde"));
-  const hopitaux = items.filter(p => !pharmacies.includes(p));
-
-  const pharmacieHtml = pharmacies.length
-    ? pharmacies.map(p => waOnlyCard({...p, name: p.title})).join("")
-    : `<div class="sante-static-card">
-        <div class="sante-icon">💊</div>
-        <h4>Pharmacie Principale d'Abengourou</h4>
-        <p>Centre-ville, Abengourou</p>
-        <p style="font-size:12px;color:var(--muted)">Horaires de garde : 20h – 07h et week-ends</p>
-      </div>`;
-
-  const hopitalHtml = hopitaux.length
-    ? hopitaux.map(p => waOnlyCard({...p, name: p.title})).join("")
-    : `<div class="sante-static-card">
-        <div class="sante-icon">🏥</div>
-        <h4>Hôpital Général d'Abengourou (HGA)</h4>
-        <p>Abengourou, Côte d'Ivoire</p>
-        <p style="font-size:12px;color:var(--muted)">Urgences 24h/24 · 7j/7</p>
+    <div class="sante-search-box">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="santeCity" list="santeCityList" placeholder="Entrez une ville (ex: Abengourou, Abidjan…)" style="flex:1;min-width:200px;padding:10px 14px;border:2px solid var(--primary);border-radius:var(--radius);font-size:14px;outline:none" />
+        <datalist id="santeCityList">${CI_CITIES.map(c=>`<option value="${c}">`).join("")}</datalist>
+        <button class="btn btn-primary" onclick="searchSanteCity()" style="white-space:nowrap">🔍 Rechercher</button>
       </div>
-      <div class="sante-static-card">
-        <div class="sante-icon">🏥</div>
-        <h4>Centre de Santé Urbain d'Abengourou</h4>
-        <p>Centre-ville, Abengourou</p>
-        <p style="font-size:12px;color:var(--muted)">Consultations · Soins de proximité</p>
-      </div>`;
-
-  wrap.querySelector(".section-block").innerHTML = `
-    <div class="sante-section">
-      <h3 class="sante-title">💊 Pharmacies de garde</h3>
-      <div class="sante-grid">${pharmacieHtml}</div>
+      <div class="city-chips">
+        ${CI_CITIES.slice(0,10).map(c=>`<button class="city-chip" onclick="document.getElementById('santeCity').value='${c}';searchSanteCity()">${c}</button>`).join("")}
+      </div>
     </div>
-    <div class="sante-section" style="margin-top:24px">
-      <h3 class="sante-title">🏥 Hôpitaux de proximité</h3>
-      <div class="sante-grid">${hopitalHtml}</div>
+    <div id="santeResults" style="margin-top:8px">
+      <p style="color:var(--muted);text-align:center;padding:24px 0">Choisissez une ville pour voir les établissements de santé</p>
     </div>`;
+}
+
+async function searchSanteCity() {
+  const city = (document.getElementById("santeCity")?.value || "").trim();
+  if (!city) return toast("Entrez une ville", "red");
+  const el = document.getElementById("santeResults");
+  el.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div><p>Recherche des établissements de santé à <strong>${city}</strong>…</p></div>`;
+  try {
+    const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(city+", Côte d'Ivoire")}&format=json&limit=1`, {headers:{"Accept-Language":"fr"}});
+    const nomData = await nomRes.json();
+    if (!nomData.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-ico">🔍</div><p>Ville introuvable. Essayez un autre nom.</p></div>`;
+      return;
+    }
+    const bb = nomData[0].boundingbox;
+    const south = parseFloat(bb[0]), north = parseFloat(bb[1]), west = parseFloat(bb[2]), east = parseFloat(bb[3]);
+    const expand = 0.05;
+    const bbox = `${south-expand},${west-expand},${north+expand},${east+expand}`;
+    const query = `[out:json][timeout:30];(node["amenity"="pharmacy"](${bbox});node["amenity"="hospital"](${bbox});node["amenity"="clinic"](${bbox});node["amenity"="doctors"](${bbox});way["amenity"="pharmacy"](${bbox});way["amenity"="hospital"](${bbox});way["amenity"="clinic"](${bbox}););out center;`;
+    const ovRes = await fetch("https://overpass-api.de/api/interpreter", {method:"POST", body:query});
+    const ovData = await ovRes.json();
+    if (!ovData.elements?.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-ico">🏥</div><p>Aucun établissement de santé trouvé à <strong>${city}</strong> via OpenStreetMap.<br><small style="color:var(--muted)">Les données peuvent être incomplètes pour certaines villes.</small></p></div>`;
+      return;
+    }
+    const elems = ovData.elements;
+    const pharmacies = elems.filter(e => e.tags?.amenity === "pharmacy");
+    const hospitals  = elems.filter(e => e.tags?.amenity === "hospital");
+    const clinics    = elems.filter(e => ["clinic","doctors"].includes(e.tags?.amenity));
+    el.innerHTML = renderSanteResults(city, pharmacies, hospitals, clinics);
+  } catch(err) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-ico">⚠️</div><p>Erreur de connexion. Vérifiez votre internet et réessayez.</p></div>`;
+  }
+}
+
+function renderSanteResults(city, pharmacies, hospitals, clinics) {
+  const card = (e, icon) => {
+    const name     = e.tags?.name || e.tags?.["name:fr"] || "Établissement de santé";
+    const phone    = e.tags?.phone || e.tags?.["contact:phone"] || e.tags?.["contact:mobile"] || "";
+    const street   = e.tags?.["addr:street"] || "";
+    const opening  = e.tags?.opening_hours || "";
+    const lat      = e.lat  || e.center?.lat;
+    const lon      = e.lon  || e.center?.lon;
+    const mapsUrl  = lat ? `https://www.google.com/maps?q=${lat},${lon}` : null;
+    const phoneClean = phone.replace(/\s/g,"");
+    return `<div class="sante-static-card">
+      <div class="sante-icon">${icon}</div>
+      <div style="flex:1">
+        <h4 style="margin:0 0 4px">${name}</h4>
+        ${street ? `<p style="font-size:12px;color:var(--muted);margin:2px 0">📍 ${street}</p>` : ""}
+        ${phone  ? `<p style="font-size:12px;color:var(--muted);margin:2px 0">📞 ${phone}</p>` : ""}
+        ${opening? `<p style="font-size:11px;color:#2e7d32;margin:2px 0">🕐 ${opening}</p>` : ""}
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          ${phoneClean ? `<a href="tel:${phoneClean}" style="display:inline-flex;align-items:center;gap:4px;background:#25D366;color:#fff;border:none;border-radius:20px;padding:5px 12px;font-size:12px;text-decoration:none;cursor:pointer">📞 Appeler</a>` : ""}
+          ${mapsUrl  ? `<a href="${mapsUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#1976d2;color:#fff;border:none;border-radius:20px;padding:5px 12px;font-size:12px;text-decoration:none;cursor:pointer">🗺️ Itinéraire</a>` : ""}
+        </div>
+      </div>
+    </div>`;
+  };
+  const section = (title, icon, items) => items.length ? `
+    <div class="sante-section" style="margin-top:20px">
+      <h3 class="sante-title">${icon} ${title} <span style="font-size:13px;font-weight:400;color:var(--muted)">(${items.length})</span></h3>
+      <div class="sante-grid">${items.map(e=>card(e,icon)).join("")}</div>
+    </div>` : "";
+  return `<h3 style="margin-bottom:4px;color:var(--primary)">Établissements de santé à ${city}</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Source : OpenStreetMap — données contributives</p>
+    ${section("Pharmacies","💊",pharmacies)}
+    ${section("Hôpitaux","🏥",hospitals)}
+    ${section("Cliniques & Centres de santé","🩺",clinics)}
+    ${!pharmacies.length && !hospitals.length && !clinics.length ? '<p style="color:var(--muted)">Aucun résultat</p>' : ""}`;
 }
 
 // ============ SCOLAIRES — Page avec sous-catégories ============
@@ -1252,11 +1479,29 @@ function togglePaidHint(sel) { switchFormForCat(sel); }
 function switchFormForCat(sel) {
   const form = sel.closest("form");
   if (!form) return;
-  const isPaid = PAID_CATS.has(sel.value);
+  const cat = sel.value;
+  const isPaid = PAID_CATS.has(cat);
+  const isProno = cat === "pronostics";
   const artSection = form.querySelector(".pf-article");
   const jobSection = form.querySelector(".pf-job");
-  if (artSection) artSection.style.display = isPaid ? "none" : "";
+  const pronoSection = form.querySelector(".pf-pronos");
+  if (artSection) artSection.style.display = (isPaid || isProno) ? "none" : "";
   if (jobSection) jobSection.style.display = isPaid ? "" : "none";
+  if (pronoSection) pronoSection.style.display = isProno ? "" : "none";
+}
+
+function onAccessTypeChange(form) {
+  if (!form) return;
+  const accessType = form.querySelector("input[name='accessType']:checked")?.value || "free";
+  const paidFields = form.querySelector(".pf-pronos-paid");
+  if (paidFields) paidFields.style.display = accessType === "paid" ? "" : "none";
+}
+
+function onPronoTypeChange(sel) {
+  const form = sel.closest("form");
+  if (!form) return;
+  const matchFields = form.querySelector(".pf-pronos-matches");
+  if (matchFields) matchFields.style.display = sel.value === "Les matchs" ? "" : "none";
 }
 
 // ============ IMAGE COMPRESSION ============
@@ -1293,38 +1538,65 @@ document.addEventListener("submit", async e => {
 
   const cat = f.category.value;
   const isPaid = PAID_CATS.has(cat);
+  const isProno = cat === "pronostics";
+  const expireHours = Number(f.expireHours?.value || 0);
 
-  // Pour les offres emploi/concours, enrichir la description avec les champs spécifiques
   let desc = f.description ? f.description.value : "";
-  if (isPaid) {
-    const employer = f.employer ? f.employer.value : "";
-    const loc      = f.jobLocation ? f.jobLocation.value : "";
-    const ctype    = f.contractType ? f.contractType.value : "";
-    const salary   = f.salary ? f.salary.value : "";
-    const deadline = f.deadline ? f.deadline.value : "";
+  let price = 0, stock = 0, whatsapp = "", oldPrice = null, personalPhone = "";
+  let employer = "", jobLocation = "", contractType = "", salary = "", deadline = "";
+
+  if (isProno) {
+    // Pronostics
+    const pronoType = f.pronoType?.value || "Les matchs";
+    const accessType = f.querySelector("input[name='accessType']:checked")?.value || "free";
+    const match1 = f.match1?.value || "";
+    const match2 = f.match2?.value || "";
+    const match3 = f.match3?.value || "";
+    const matchLines = [match1, match2, match3].filter(Boolean).map((m, i) => `⚽ Match ${i+1} : ${m}`).join("\n");
+    const descBase = f.description?.value || "";
+    desc = `🎯 ${pronoType}\n${matchLines ? matchLines + "\n" : ""}${descBase}`.trim();
+    employer = pronoType;
+    if (accessType === "paid") {
+      price = Number(f.pronoPrice?.value || 0);
+      whatsapp = f.pronoWhatsapp?.value || "";
+    }
+    stock = 9999;
+
+  } else if (isPaid) {
+    employer    = f.employer ? f.employer.value : "";
+    jobLocation = f.jobLocation ? f.jobLocation.value : "";
+    contractType = f.contractType ? f.contractType.value : "";
+    salary       = f.salary ? f.salary.value : "";
+    deadline     = f.deadline ? f.deadline.value : "";
     const extras = [
-      employer  ? `🏢 Entreprise : ${employer}` : "",
-      loc       ? `📍 Lieu : ${loc}` : "",
-      ctype     ? `📄 Contrat : ${ctype}` : "",
-      salary    ? `💰 Salaire : ${salary}` : "",
-      deadline  ? `⏰ Date limite : ${new Date(deadline).toLocaleDateString("fr-FR")}` : "",
+      employer     ? `🏢 Entreprise : ${employer}` : "",
+      jobLocation  ? `📍 Lieu : ${jobLocation}` : "",
+      contractType ? `📄 Contrat : ${contractType}` : "",
+      salary       ? `💰 Salaire : ${salary}` : "",
+      deadline     ? `⏰ Date limite : ${new Date(deadline).toLocaleDateString("fr-FR")}` : "",
     ].filter(Boolean).join("\n");
     desc = (extras ? extras + "\n\n" : "") + desc;
-  }
+    const jobSec = f.querySelector(".pf-job");
+    price    = Number(jobSec?.querySelector("input[name='price']")?.value || 0);
+    whatsapp = jobSec?.querySelector("input[name='whatsapp']")?.value || "";
+    stock    = 9999;
 
-  // Récupérer price/stock/whatsapp selon la section ACTIVE uniquement
-  const activeSection = isPaid ? f.querySelector(".pf-job") : f.querySelector(".pf-article");
-  const price = Number(activeSection?.querySelector("input[name='price']")?.value || 0);
-  const stock = isPaid ? 9999 : (Number(activeSection?.querySelector("input[name='stock']")?.value) || 0);
-  const whatsapp = activeSection?.querySelector("input[name='whatsapp']")?.value || "";
-  const oldPrice = isPaid ? null : (Number(f.querySelector(".pf-article input[name='oldPrice']")?.value) || null);
-  const personalPhone = isPaid ? "" : (f.querySelector(".pf-article input[name='personalPhone']")?.value || "");
+  } else {
+    const artSec = f.querySelector(".pf-article");
+    price         = Number(artSec?.querySelector("input[name='price']")?.value || 0);
+    stock         = Number(artSec?.querySelector("input[name='stock']")?.value) || 0;
+    whatsapp      = artSec?.querySelector("input[name='whatsapp']")?.value || "";
+    oldPrice      = Number(artSec?.querySelector("input[name='oldPrice']")?.value) || null;
+    personalPhone = artSec?.querySelector("input[name='personalPhone']")?.value || "";
+  }
 
   const body = {
     ownerId: USER.id, ownerName: USER.name, ownerRole: USER.role,
     title: f.title.value, category: cat,
     price, oldPrice, stock, whatsapp, personalPhone,
     image: img, description: desc,
+    employer, jobLocation, contractType, salary, deadline,
+    expireHours,
   };
 
   try {
@@ -1334,6 +1606,8 @@ document.addEventListener("submit", async e => {
       f.querySelectorAll(".img-preview-wrap").forEach(w => { w.style.display = "none"; });
       f.querySelectorAll(".img-preview").forEach(i => { i.src = ""; });
       f.querySelectorAll(".pf-job").forEach(s => { s.style.display = "none"; });
+      f.querySelectorAll(".pf-pronos").forEach(s => { s.style.display = "none"; });
+      f.querySelectorAll(".pf-pronos-paid").forEach(s => { s.style.display = "none"; });
       f.querySelectorAll(".pf-article").forEach(s => { s.style.display = ""; });
       if (USER.role === "admin") { toast("✓ Publié immédiatement !", "green"); adminTab("products"); }
       else { toast("Article envoyé — en attente de validation", "green"); loadMyProducts(); }
@@ -1414,9 +1688,48 @@ function productFormFields() {
         <div class="form-group"><label>Prix d'accès aux détails (FCFA) *</label><input name="price" type="number" placeholder="Ex: 500" /></div>
         <div class="form-group"><label>N° WhatsApp contact</label><input name="whatsapp" placeholder="2250700000000" /></div>
       </div>
-      <!-- champs cachés non utilisés pour emploi -->
       <input type="hidden" name="oldPrice" value="" />
       <input type="hidden" name="stock" value="9999" />
+      <input type="hidden" name="personalPhone" value="" />
+    </div>
+
+    <!-- SECTION : Pronostics -->
+    <div class="pf-section pf-pronos" style="display:none">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Type de pronostic</label>
+          <select name="pronoType" onchange="onPronoTypeChange(this)">
+            <option value="Les matchs">⚽ Les matchs</option>
+            <option value="Jeu virtuel">🎮 Jeu virtuel</option>
+          </select>
+        </div>
+      </div>
+      <div class="pf-pronos-matches">
+        <div class="form-row">
+          <div class="form-group"><label>Match 1</label><input name="match1" placeholder="Ex: PSG vs Real Madrid" /></div>
+          <div class="form-group"><label>Match 2</label><input name="match2" placeholder="Ex: Barcelone vs Bayern" /></div>
+          <div class="form-group"><label>Match 3</label><input name="match3" placeholder="Ex: Arsenal vs Chelsea" /></div>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:8px">
+        <div class="form-group">
+          <label>Accès</label>
+          <div style="display:flex;gap:16px;align-items:center;margin-top:4px">
+            <label style="font-weight:normal;display:flex;gap:6px;align-items:center"><input type="radio" name="accessType" value="free" checked onchange="onAccessTypeChange(this.closest('form'))"> Gratuit</label>
+            <label style="font-weight:normal;display:flex;gap:6px;align-items:center"><input type="radio" name="accessType" value="paid" onchange="onAccessTypeChange(this.closest('form'))"> Payant</label>
+          </div>
+        </div>
+      </div>
+      <div class="pf-pronos-paid" style="display:none">
+        <div class="form-row">
+          <div class="form-group"><label>Prix d'accès (FCFA)</label><input name="pronoPrice" type="number" placeholder="Ex: 1000" /></div>
+          <div class="form-group"><label>N° WhatsApp pour paiement</label><input name="pronoWhatsapp" placeholder="2250700000000" /></div>
+        </div>
+      </div>
+      <input type="hidden" name="price" value="0" />
+      <input type="hidden" name="oldPrice" value="" />
+      <input type="hidden" name="stock" value="9999" />
+      <input type="hidden" name="whatsapp" value="" />
       <input type="hidden" name="personalPhone" value="" />
     </div>
 
@@ -1431,6 +1744,21 @@ function productFormFields() {
     <div class="form-group">
       <label>Description / Détails complets <small style="color:var(--muted)">(confidentiel pour emploi/concours)</small></label>
       <textarea name="description" rows="4" placeholder="Décrivez l'offre — profil requis, missions, conditions, comment postuler…"></textarea>
+    </div>
+    <div class="form-group">
+      <label>⏱ Expiration de l'annonce</label>
+      <select name="expireHours">
+        <option value="0">Pas d'expiration</option>
+        <option value="1">1 heure</option>
+        <option value="6">6 heures</option>
+        <option value="12">12 heures</option>
+        <option value="24">24 heures</option>
+        <option value="48">2 jours</option>
+        <option value="72">3 jours</option>
+        <option value="168">7 jours</option>
+        <option value="336">14 jours</option>
+        <option value="720">30 jours</option>
+      </select>
     </div>`;
 }
 

@@ -123,13 +123,24 @@
       <div class="products-grid" id="flashGrid"></div>
     </section>
 
-    <!-- BOUTIQUE -->
+    <!-- BOUTIQUE PAR CATÉGORIES -->
     <section class="section-block">
       <div class="section-head">
         <h2>🛍️ Boutique en ligne</h2>
-        <a href="#" class="see-all" onclick="return false">Voir tout →</a>
+        <small style="color:var(--muted);font-size:13px">Articles par catégorie</small>
       </div>
-      <div class="products-grid" id="shopGrid">
+      <div id="shopGrid">
+        <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+      </div>
+    </section>
+
+    <!-- SERVICES & ANNONCES -->
+    <section class="section-block">
+      <div class="section-head">
+        <h2>📋 Services &amp; Annonces</h2>
+        <small style="color:var(--muted);font-size:13px">Contact direct via WhatsApp</small>
+      </div>
+      <div id="servicesGrid">
         <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
       </div>
     </section>
