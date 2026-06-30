@@ -86,6 +86,7 @@ async function initDB() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_email TEXT DEFAULT 'contact@abengourou-market.com';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_website TEXT DEFAULT '';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_whatsapp TEXT DEFAULT '2250767202271';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS category_config JSONB DEFAULT '{}';
 
     CREATE TABLE IF NOT EXISTS rencontres (
       id               BIGINT PRIMARY KEY,
@@ -190,6 +191,7 @@ async function getSettings() {
     companyWhatsapp: s.company_whatsapp || "2250767202271",
     subscriptionPrice: Number(s.subscription_price) || 5000,
     sms: { ...defaultSms, ...(s.sms_config || {}) },
+    categoryConfig: s.category_config || {},
   };
 }
 
@@ -262,7 +264,7 @@ app.get("/api/settings", async (_req, res) => {
 app.post("/api/settings", async (req, res) => {
   try {
     const cur = await getSettings();
-    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms } = req.body || {};
+    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig } = req.body || {};
     const newName      = companyName      !== undefined ? companyName      : cur.companyName;
     const newPhone     = companyPhone     !== undefined ? companyPhone     : cur.companyPhone;
     const newEmail     = companyEmail     !== undefined ? companyEmail     : cur.companyEmail;
@@ -270,10 +272,12 @@ app.post("/api/settings", async (req, res) => {
     const newWhatsapp  = companyWhatsapp  !== undefined ? String(companyWhatsapp).replace(/\D/g,"") : cur.companyWhatsapp;
     const newPrice     = subscriptionPrice !== undefined ? Number(subscriptionPrice) : cur.subscriptionPrice;
     const newSms       = sms ? { ...cur.sms, ...sms } : cur.sms;
+    const newCatCfg    = categoryConfig !== undefined ? categoryConfig : cur.categoryConfig;
     await pool.query(
       `UPDATE settings SET company_name=$1, subscription_price=$2, sms_config=$3,
-       company_phone=$4, company_email=$5, company_website=$6, company_whatsapp=$7 WHERE id=1`,
-      [newName, newPrice, JSON.stringify(newSms), newPhone, newEmail, newWebsite, newWhatsapp]
+       company_phone=$4, company_email=$5, company_website=$6, company_whatsapp=$7,
+       category_config=$8 WHERE id=1`,
+      [newName, newPrice, JSON.stringify(newSms), newPhone, newEmail, newWebsite, newWhatsapp, JSON.stringify(newCatCfg)]
     );
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: String(e) }); }
