@@ -330,7 +330,7 @@ function waOnlyCard(p) {
       <div class="pcard-name">${name}</div>
       ${desc ? `<div class="pcard-stock" style="color:var(--muted);font-size:12px;margin-bottom:8px">${desc.slice(0,60)}${desc.length>60?"…":""}</div>` : ""}
       <div class="pcard-actions">
-        ${wa ? `<button class="btn-wa" style="width:100%;border-radius:20px;padding:8px;font-size:13px;background:#25D366;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msg}','_blank')">💬 Contacter sur WhatsApp</button>` : `<span style="font-size:12px;color:var(--muted)">Aucun contact disponible</span>`}
+        ${wa ? `<button class="btn-wa" style="width:100%;border-radius:20px;padding:8px;font-size:13px;background:#25D366;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msg}','_blank')">📲 Commander / Payer</button>` : `<span style="font-size:12px;color:var(--muted)">Aucun contact disponible</span>`}
       </div>
     </div>
   </div>`;
@@ -346,7 +346,7 @@ function openWaDetail(p) {
     ${p.description ? `<div style="font-size:14px;line-height:1.7;color:var(--text);white-space:pre-line;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:var(--radius)">${p.description}</div>` : ""}
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
-      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="window.open('https://wa.me/${wa}?text=${msg}','_blank')">💬 Contacter sur WhatsApp</button>` : ""}
+      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="window.open('https://wa.me/${wa}?text=${msg}','_blank')">📲 Commander / Payer</button>` : ""}
     </div>`);
 }
 
@@ -569,7 +569,7 @@ function openRencontreRegister() {
     <div class="form-row">
       <div class="form-group"><label>Date de naissance *</label><input id="rcBirth" type="date" max="${new Date(new Date().setFullYear(new Date().getFullYear()-18)).toISOString().split('T')[0]}" /></div>
       <div class="form-group"><label>Sexe *</label>
-        <select id="rcSexe"><option value="">— Sélectionner —</option><option value="Homme">Homme</option><option value="Femme">Femme</option></select>
+        <select id="rcSexe"><option value="">— Sélectionner —</option><option value="M">M (Homme)</option><option value="F">F (Femme)</option></select>
       </div>
     </div>
     <div class="form-row">
@@ -589,7 +589,7 @@ function openRencontreRegister() {
     <div class="form-group">
       <label>📷 Votre photo <small style="color:var(--muted)">(jamais visible publiquement — uniquement après paiement d'accès)</small></label>
       <input id="rcPhoto" type="file" accept="image/*,image/heic,image/heif" class="img-file-input" onchange="previewRcImg(this)" />
-      <div id="rcPhotoPreview" style="display:none;margin-top:8px;display:flex;align-items:center;gap:10px">
+      <div id="rcPhotoPreview" style="display:none;margin-top:8px;align-items:center;gap:10px">
         <img id="rcPhotoImg" style="width:72px;height:72px;object-fit:cover;border-radius:50%;border:3px solid #c2185b" />
         <button type="button" class="img-preview-remove" onclick="document.getElementById('rcPhoto').value='';document.getElementById('rcPhotoPreview').style.display='none'">✕ Supprimer</button>
       </div>
@@ -651,7 +651,7 @@ async function submitRencontreProfile() {
 
   const photoFile = document.getElementById("rcPhoto").files[0];
   let photo = null;
-  if (photoFile) photo = await compressImage(photoFile);
+  try { if (photoFile) photo = await compressImage(photoFile); } catch {}
 
   const body = {
     nom, prenom, birthdate, sexe,
@@ -660,13 +660,16 @@ async function submitRencontreProfile() {
     quartier: document.getElementById("rcQuartier").value.trim(),
     whatsapp: waVal,
     phone: phoneVal,
-    prixAcces: 500, // défini par l'administrateur lors de l'approbation
+    prixAcces: 500,
     description: document.getElementById("rcDesc").value.trim(),
     souscat: document.getElementById("rcSouscat").value,
     photo,
   };
   try {
-    const r = await fetch("/api/rencontres", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 30000);
+    const r = await fetch("/api/rencontres", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body), signal: ctrl.signal });
+    clearTimeout(tid);
     const j = await r.json();
     bar.done(r.ok);
     await new Promise(res => setTimeout(res, 400));
@@ -674,8 +677,11 @@ async function submitRencontreProfile() {
       closeModal();
       toast("✓ Profil envoyé — en attente de validation par l'administrateur", "green");
     } else { toast(j.error || "Erreur lors de l'envoi", "red"); }
-  } catch { bar.done(false); toast("Erreur réseau", "red"); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = "❤️ Envoyer mon profil"; } }
+  } catch(err) {
+    bar.done(false);
+    toast(err.name === "AbortError" ? "Délai dépassé — vérifiez votre connexion et réessayez" : "Erreur réseau — réessayez", "red");
+  }
+  finally { if (btn) { btn.disabled = false; btn.textContent = "❤️ Envoyer mon profil"; } if (pw) pw.style.display = "none"; }
 }
 
 async function showRencontresPage() {
@@ -783,17 +789,16 @@ async function switchPage2Tab(cat, btn) {
   const el = document.getElementById("page2Content");
   if (!el) return;
   el.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>`;
-  if (!_page2All) {
-    try { _page2All = await (await fetch("/api/products")).json(); } catch { _page2All = []; }
-  }
-  const items = _page2All.filter(p => p.category === cat || (cat === "actualites" && p.category === "actualites") || (cat === "concours" && p.category === "concours-ci"));
+  try { _page2All = await (await fetch("/api/products")).json(); } catch { _page2All = []; }
+  const dbCat = cat === "concours" ? "concours-ci" : cat;
+  const items = _page2All.filter(p => p.category === dbCat);
   const icon = cat === "concours" ? "📚" : cat === "actualites" ? "📰" : "💼";
   const label = cat === "concours" ? "Concours CI" : cat === "actualites" ? "Actualités" : "Offres d'emploi";
   if (!items.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-ico">${icon}</div><p>Aucune ${label.toLowerCase()} pour le moment.</p></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-ico">${icon}</div><p>Aucune annonce dans <strong>${label}</strong> pour le moment.</p></div>`;
     return;
   }
-  el.innerHTML = `<div class="info-cards-grid">${items.map(p => infoCard(p)).join("")}</div>`;
+  el.innerHTML = `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">${items.length} annonce${items.length>1?"s":""}</div><div class="products-grid">${items.map(p => waOnlyCard({...p, name:p.title})).join("")}</div>`;
 }
 
 // ============ RENDER HOME ============
@@ -806,7 +811,6 @@ function renderHome() {
     `<a href="#" class="shortcut" onclick="filterCat('${cat}');return false;"><span class="ico">${i}</span><span>${n}</span></a>`
   ).join("");
 
-  // Charger la page 2 (onglet Concours par défaut)
   switchPage2Tab("concours", document.querySelector(".page2-tab.active"));
 
   loadFlashSection();
@@ -816,6 +820,13 @@ function renderHome() {
   loadShop();
   loadServicesSection();
   loadRencontresSection();
+}
+
+function showHome() {
+  _page2All = null;
+  showPage("page-home");
+  switchPage2Tab("concours", document.querySelector(".page2-tab.active"));
+  loadShop();
 }
 
 // Offres flash = produits avec remise publiés (oldPrice > price)
@@ -949,7 +960,7 @@ async function loadShop() {
 async function loadServicesSection() {
   const grid = document.getElementById("servicesGrid");
   if (!grid) return;
-  const SERVICE_CATS = ["services","annonces","evenements","emploi","concours-ci","actualites"];
+  const SERVICE_CATS = ["services","annonces","evenements"];
   let all = [];
   try { all = await (await fetch("/api/products")).json(); } catch {}
   const items = all.filter(p => SERVICE_CATS.includes(p.category));
@@ -1042,13 +1053,6 @@ function showPage(id) {
   document.querySelectorAll(".page-view").forEach(p => p.classList.remove("active"));
   document.getElementById(id).classList.add("active");
   window.scrollTo({ top: 0, behavior: "smooth" });
-}
-function showHome() {
-  showPage("page-home");
-  // Recharger les sections dynamiques emploi/concours
-  loadPaidSection("concoursGrid", "concours-ci", "📚");
-  loadPaidSection("jobsGrid", "emploi", "💼");
-  loadShop();
 }
 function showText(key) {
   const TEXTS = {
@@ -1229,8 +1233,12 @@ async function showSantePage() {
       </div>
     </div>
     <div id="santeResults" style="margin-top:8px">
-      <p style="color:var(--muted);text-align:center;padding:24px 0">Choisissez une ville pour voir les établissements de santé</p>
+      <div class="loading-placeholder"><div class="spinner"></div><p>Chargement d'Abengourou…</p></div>
     </div>`;
+  // Charger Abengourou automatiquement
+  const cityInput = document.getElementById("santeCity");
+  if (cityInput) cityInput.value = "Abengourou";
+  searchSanteCity();
 }
 
 async function searchSanteCity() {
@@ -1482,7 +1490,10 @@ function showVendeur() {
   if (!USER || USER.role !== "vendeur") return toast("Réservé aux vendeurs", "red");
   showPage("page-vendeur");
   const sel = document.getElementById("catSelect");
-  if (sel) sel.innerHTML = CATEGORIES.map(([s,_,n]) => `<option value="${s}">${n}</option>`).join("");
+  if (sel) {
+    sel.innerHTML = CATEGORIES.map(([s,_,n]) => `<option value="${s}">${n}</option>`).join("");
+    switchFormForCat(sel);
+  }
   const banner = document.getElementById("subBanner");
   if (banner) {
     banner.innerHTML = USER.active
@@ -1530,6 +1541,13 @@ function switchFormForCat(sel) {
   const form = sel.closest("form");
   if (!form) return;
   const cat = sel.value;
+
+  // Rencontres → rediriger vers la page dédiée
+  if (cat === "rencontres") {
+    showRencontresPage();
+    return;
+  }
+
   const isService = FORM_SERVICE_CATS.has(cat);
   const isPaid = PAID_CATS.has(cat);
   const isProno = cat === "pronostics";
@@ -1926,6 +1944,9 @@ async function adminTab(which) {
           Publier l'article
         </button>
       </form>`;
+    // Initialiser le bon formulaire selon la première catégorie sélectionnée
+    const initSel = c.querySelector("select[name='category']");
+    if (initSel) switchFormForCat(initSel);
 
   } else if (which === "orders") {
     const orders = await (await fetch("/api/orders")).json();
@@ -1969,6 +1990,47 @@ async function adminTab(which) {
         <div class="stat-card green"><div class="stat-num">${all.filter(p=>p.approved).length}</div><div class="stat-lbl">Approuvés</div></div>
         <div class="stat-card dark"><div class="stat-num">${pending}</div><div class="stat-lbl">En attente</div></div>
       </div>
+
+      <!-- Formulaire ajout direct admin -->
+      <div class="section-block" style="margin-bottom:20px;border:1.5px solid #c2185b">
+        <h4 style="color:#c2185b;margin-bottom:12px">➕ Ajouter un profil Rencontre (publié immédiatement)</h4>
+        <div class="form-row">
+          <div class="form-group"><label>Nom *</label><input id="adm_rcNom" placeholder="Nom" /></div>
+          <div class="form-group"><label>Prénom *</label><input id="adm_rcPrenom" placeholder="Prénom" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Date de naissance *</label><input id="adm_rcBirth" type="date" max="${new Date(new Date().setFullYear(new Date().getFullYear()-18)).toISOString().split('T')[0]}" /></div>
+          <div class="form-group"><label>Sexe *</label>
+            <select id="adm_rcSexe">
+              <option value="">— Sélectionner —</option>
+              <option value="M">M (Homme)</option>
+              <option value="F">F (Femme)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Profession</label><input id="adm_rcProf" placeholder="Ex: Commerçant, Étudiant…" /></div>
+          <div class="form-group"><label>Ville</label><input id="adm_rcVille" placeholder="Ex: Abengourou" /></div>
+          <div class="form-group"><label>Quartier</label><input id="adm_rcQuartier" placeholder="Ex: Centre" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Type de rencontre</label>
+            <select id="adm_rcSouscat">
+              <option value="amitie">💙 Amitié</option>
+              <option value="serieux">❤️ Relation sérieuse</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Prix d'accès (FCFA)</label><input id="adm_rcPrix" type="number" value="500" min="0" step="100" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>📞 Téléphone</label><input id="adm_rcPhone" placeholder="07 67 20 22 71" type="tel" /></div>
+          <div class="form-group"><label>💬 WhatsApp</label><input id="adm_rcWa" placeholder="2250767202271" type="tel" /></div>
+        </div>
+        <div class="form-group"><label>Description</label><textarea id="adm_rcDesc" rows="3" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:8px;font-size:13px;box-sizing:border-box" placeholder="Décrivez le profil…"></textarea></div>
+        <button class="btn btn-primary" style="background:linear-gradient(135deg,#e91e8c,#c2185b)" onclick="adminAddRencontre()">❤️ Publier le profil directement</button>
+        <span id="adm_rcMsg" style="margin-left:12px;font-size:13px"></span>
+      </div>
+
       ${!all.length ? `<div class="empty-state"><div class="empty-ico">❤️</div><p>Aucun profil reçu.</p></div>`
         : all.map(p => {
           const st = p.approved
@@ -2112,46 +2174,6 @@ async function adminTab(which) {
     area.addEventListener("dragleave", () => area.classList.remove("drag-over"));
     area.addEventListener("drop", e => { e.preventDefault(); area.classList.remove("drag-over"); const f = e.dataTransfer.files[0]; if(f) importDbFileObj(f); });
 
-  } else if (which === "garde") {
-    const rows = await (await fetch("/api/sante/garde/all")).json();
-    c.innerHTML = `
-      <h3 style="margin-bottom:6px">🟢 Gestion des pharmacies de garde</h3>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Définissez quelle pharmacie est de garde pour chaque ville. Elle apparaîtra en vert sur la page Santé.</p>
-
-      <div class="section-block" style="margin-bottom:24px">
-        <h4 style="margin-bottom:14px">➕ Ajouter / Mettre à jour une pharmacie de garde</h4>
-        <div class="form-row">
-          <div class="form-group"><label>Ville *</label><input id="gardeCity" placeholder="Ex: Abengourou" /></div>
-          <div class="form-group"><label>Nom de la pharmacie *</label><input id="gardeName" placeholder="Ex: Pharmacie de la Paix" /></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Adresse</label><input id="gardeAddress" placeholder="Ex: Quartier Kossonou, Rue 12" /></div>
-          <div class="form-group"><label>Téléphone</label><input id="gardePhone" placeholder="Ex: 0708090001" /></div>
-        </div>
-        <div class="form-group"><label>Note (heures de garde, info supplémentaire)</label><input id="gardeNote" placeholder="Ex: Ouverte de 22h à 6h du matin" /></div>
-        <button class="btn btn-primary" onclick="saveGarde()">💾 Enregistrer la pharmacie de garde</button>
-        <span id="gardeMsg" style="margin-left:12px;font-size:13px"></span>
-      </div>
-
-      <div class="section-block">
-        <h4 style="margin-bottom:14px">📋 Pharmacies de garde enregistrées</h4>
-        ${rows.length === 0
-          ? `<div class="empty-state"><div class="empty-ico">💊</div><p>Aucune pharmacie de garde enregistrée.</p></div>`
-          : `<div style="display:flex;flex-direction:column;gap:10px">
-              ${rows.map(r => `
-                <div class="admin-row" style="border:1.5px solid #a5d6a7;background:#f1f8e9">
-                  <div class="admin-row-head">
-                    <div>
-                      <div class="admin-row-name" style="color:#1b5e20">🟢 ${r.name} <span style="font-size:12px;font-weight:400;color:#388e3c">— ${r.city}</span></div>
-                      <div class="admin-row-sub">${r.address ? "📍 "+r.address+" · " : ""}${r.phone ? "📞 "+r.phone : ""}${r.note ? " · "+r.note : ""}</div>
-                    </div>
-                  </div>
-                  <div class="admin-row-actions">
-                    <button class="btn btn-ghost btn-sm" onclick="deleteGarde('${r.city}')">🗑 Supprimer</button>
-                  </div>
-                </div>`).join("")}
-            </div>`}
-      </div>`;
 
   } else if (which === "settings") {
     const s = await (await fetch("/api/settings")).json();
@@ -2235,76 +2257,14 @@ async function adminTab(which) {
           </div>
         </div>
 
-        <!-- SECTION 2: API SMS -->
+        <!-- SECTION 3: Save -->
         <div class="settings-section">
-          <div class="settings-section-title">📱 Configuration API SMS</div>
-
-          <!-- Toggle -->
-          <div class="sms-toggle-row">
-            <label class="toggle-switch">
-              <input type="checkbox" id="smsEnabled" ${sm.enabled ? "checked" : ""} onchange="toggleSmsFields()" />
-              <span class="toggle-slider"></span>
-            </label>
-            <div class="toggle-label">
-              Activer l'envoi de SMS
-              <small>Notifier automatiquement les vendeurs lors d'une nouvelle commande</small>
-            </div>
-          </div>
-
-          <div id="smsFieldsWrap" style="${sm.enabled ? "" : "opacity:.45;pointer-events:none"}">
-            <!-- Placeholders help -->
-            <div class="sms-placeholder-help">
-              <h5>📌 Placeholders disponibles dans l'URL et le corps :</h5>
-              <div class="placeholder-tags">
-                <span class="ph-tag">{to}</span>
-                <span class="ph-tag">{message}</span>
-                <span class="ph-tag">{from}</span>
-              </div>
-              <div style="font-size:12px;color:#0277BD;margin-top:8px">
-                <strong>{to}</strong> = numéro du destinataire &nbsp;·&nbsp; <strong>{message}</strong> = texte du SMS &nbsp;·&nbsp; <strong>{from}</strong> = expéditeur / nom entreprise
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="form-group">
-                <label>Expéditeur (Sender ID)</label>
-                <input id="smsSender" value="${sm.sender || ""}" placeholder="ABGMARKET" />
-                <div class="form-hint">Nom affiché comme expéditeur du SMS</div>
-              </div>
-            </div>
-
-            <div class="form-group" style="margin-bottom:12px">
-              <label>URL de l'API SMS</label>
-              <input id="smsUrl" value="${(sm.url || "").replace(/"/g, "&quot;")}" placeholder="https://api.votre-sms.com/send?to={to}&msg={message}" />
-              <div class="form-hint">Exemple Infobip : https://api.infobip.com/sms/2/text/single</div>
-            </div>
-
-            <div class="form-group" style="margin-bottom:12px">
-              <label>Clé API (Authorization Bearer)</label>
-              <input id="smsApiKey" type="password" value="${sm.apiKey || ""}" placeholder="VOTRE_CLE_API_SMS" />
-              <div class="form-hint">Ajoutée automatiquement en en-tête : Authorization: Bearer {clé}</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- SECTION 3: Save + Test -->
-        <div class="settings-section">
-          <div class="settings-section-title">💾 Enregistrer & Tester</div>
+          <div class="settings-section-title">💾 Enregistrer les paramètres</div>
           <button class="btn btn-primary" style="min-width:200px" onclick="saveSettings()">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Enregistrer les paramètres
           </button>
-          <hr class="modal-divider" style="margin:16px 0" />
-          <div class="sms-test-row">
-            <div class="form-group">
-              <label>Numéro de test (format international)</label>
-              <input id="smsTestNum" placeholder="Ex : 2250700000000" type="tel" />
-            </div>
-            <button class="btn btn-secondary" onclick="testSMS()" style="height:42px;white-space:nowrap;align-self:flex-end">
-              📤 Envoyer un SMS test
-            </button>
-          </div>
-          <div id="settingsMsg"></div>
+          <div id="settingsMsg" style="margin-top:12px"></div>
         </div>
       </div>`;
   }
@@ -2379,6 +2339,41 @@ async function approveRencontre(id) {
   } catch { bar.done(false); toast("Erreur réseau","red"); if (btn) btn.disabled = false; }
 }
 async function deleteRencontre(id) { if(!confirm("Supprimer ce profil ?"))return; await fetch("/api/rencontres/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); toast("Profil supprimé"); adminTab("rencontres"); }
+
+async function adminAddRencontre() {
+  const nom = document.getElementById("adm_rcNom")?.value.trim();
+  const prenom = document.getElementById("adm_rcPrenom")?.value.trim();
+  const birthdate = document.getElementById("adm_rcBirth")?.value;
+  const sexe = document.getElementById("adm_rcSexe")?.value;
+  const msg = document.getElementById("adm_rcMsg");
+  if (!nom || !prenom || !birthdate || !sexe) {
+    if (msg) { msg.style.color="red"; msg.textContent="Remplissez les champs obligatoires (nom, prénom, date, sexe)"; }
+    return toast("Champs obligatoires manquants","red");
+  }
+  const body = {
+    nom, prenom, birthdate, sexe,
+    profession: document.getElementById("adm_rcProf")?.value.trim()||"",
+    ville: document.getElementById("adm_rcVille")?.value.trim()||"",
+    quartier: document.getElementById("adm_rcQuartier")?.value.trim()||"",
+    souscat: document.getElementById("adm_rcSouscat")?.value||"amitie",
+    prixAcces: Number(document.getElementById("adm_rcPrix")?.value)||500,
+    phone: document.getElementById("adm_rcPhone")?.value.trim()||"",
+    whatsapp: (document.getElementById("adm_rcWa")?.value.trim()||"").replace(/\D/g,""),
+    description: document.getElementById("adm_rcDesc")?.value.trim()||"",
+    autoApprove: true,
+  };
+  try {
+    const r = await fetch("/api/rencontres",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d = await r.json();
+    if (d.ok) {
+      toast("Profil publié directement ✓","green");
+      adminTab("rencontres");
+    } else {
+      if (msg) { msg.style.color="red"; msg.textContent="Erreur : "+(d.error||""); }
+      toast("Erreur lors de l'ajout","red");
+    }
+  } catch { toast("Erreur réseau","red"); }
+}
 async function approveVendor(id) { await fetch("/api/vendors/approve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); toast("Compte vendeur approuvé ✓","green"); adminTab("vendors"); }
 async function deleteVendor(id) { if(!confirm("Supprimer ce compte vendeur ?"))return; await fetch("/api/vendors/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); toast("Vendeur supprimé",""); adminTab("vendors"); }
 async function approveProduct(id) { await fetch("/api/products/approve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})}); toast("Article validé ✓","green"); adminTab("products"); }
@@ -2511,35 +2506,6 @@ function toggleCatPrice(slug) {
   if (inp) inp.style.display = sel?.value === "paid" ? "" : "none";
 }
 
-// ============ PHARMACIE DE GARDE (admin) ============
-async function saveGarde() {
-  const city    = document.getElementById("gardeCity")?.value.trim();
-  const name    = document.getElementById("gardeName")?.value.trim();
-  const address = document.getElementById("gardeAddress")?.value.trim();
-  const phone   = document.getElementById("gardePhone")?.value.trim();
-  const note    = document.getElementById("gardeNote")?.value.trim();
-  const msg     = document.getElementById("gardeMsg");
-  if (!city || !name) return toast("Ville et nom de pharmacie requis", "red");
-  const r = await fetch("/api/sante/garde", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({city, name, address, phone, note})});
-  const d = await r.json();
-  if (d.ok) {
-    if (msg) { msg.style.color = "green"; msg.textContent = "✓ Enregistré avec succès"; }
-    toast("Pharmacie de garde enregistrée ✓", "green");
-    setTimeout(() => adminTab("garde"), 800);
-  } else {
-    if (msg) { msg.style.color = "red"; msg.textContent = "Erreur : " + (d.error||""); }
-  }
-}
-
-async function deleteGarde(city) {
-  if (!confirm(`Supprimer la pharmacie de garde pour "${city}" ?`)) return;
-  const r = await fetch("/api/sante/garde/delete", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({city})});
-  const d = await r.json();
-  if (d.ok) { toast("Supprimé", "green"); adminTab("garde"); }
-  else toast("Erreur : " + (d.error||""), "red");
-}
 
 async function saveSettings() {
   const waRaw = document.getElementById("setWhatsapp")?.value || "";
@@ -2557,12 +2523,6 @@ async function saveSettings() {
     companyWebsite:   document.getElementById("setWebsite")?.value,
     companyWhatsapp:  waRaw.replace(/\D/g, ""),
     categoryConfig,
-    sms: {
-      enabled: document.getElementById("smsEnabled").checked,
-      url: document.getElementById("smsUrl").value,
-      apiKey: document.getElementById("smsApiKey").value,
-      sender: document.getElementById("smsSender").value,
-    },
   };
   await fetch("/api/settings", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
   // Mettre à jour le WhatsApp admin en mémoire
