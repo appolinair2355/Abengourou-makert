@@ -107,6 +107,8 @@ async function initDB() {
       created_at       TIMESTAMPTZ DEFAULT NOW()
     );
 
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
     INSERT INTO settings (id, company_name, subscription_price, sms_config)
     VALUES (1, 'ABENGOUROU-MARKET.CI', 5000,
       '{"enabled":false,"method":"POST","url":"","contentType":"application/json","headers":"","bodyTemplate":"","sender":"ABGMARKET","apiKey":""}')
@@ -159,6 +161,7 @@ function rowToProduct(r) {
     contractType: r.contract_type || "",
     salary: r.salary || "",
     deadline: r.deadline || "",
+    expiresAt: r.expires_at || null,
     createdAt: r.created_at,
   };
 }
@@ -197,6 +200,7 @@ async function getSettings() {
 
 async function productVisible(p) {
   if (!p.approved || p.blocked) return false;
+  if (p.expiresAt && new Date(p.expiresAt) < new Date()) return false;
   if (p.ownerRole === "admin") return true;
   const { rows } = await pool.query("SELECT * FROM users WHERE id=$1", [p.ownerId]);
   return vendorActive(rows[0]);
@@ -373,12 +377,14 @@ app.post("/api/products", async (req, res) => {
     const id = Date.now();
     const stock = Number(b.stock) || 0;
     const isAdmin = b.ownerRole === "admin";
+    const expireHours = Number(b.expireHours) || 0;
+    const expiresAt = expireHours > 0 ? new Date(Date.now() + expireHours * 3600000).toISOString() : null;
     await pool.query(
       `INSERT INTO products
         (id,title,category,price,old_price,stock,stock_init,image,description,
          whatsapp,personal_phone,owner_id,owner_name,owner_role,approved,blocked,
-         employer,job_location,contract_type,salary,deadline)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,$16,$17,$18,$19,$20)`,
+         employer,job_location,contract_type,salary,deadline,expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,$16,$17,$18,$19,$20,$21)`,
       [
         id, b.title, b.category, Number(b.price)||0,
         b.oldPrice ? Number(b.oldPrice) : null,
@@ -387,7 +393,7 @@ app.post("/api/products", async (req, res) => {
         b.ownerId, b.ownerName||"", b.ownerRole||"vendeur",
         isAdmin,
         b.employer||"", b.jobLocation||"", b.contractType||"",
-        b.salary||"", b.deadline||"",
+        b.salary||"", b.deadline||"", expiresAt,
       ]
     );
     const { rows } = await pool.query("SELECT * FROM products WHERE id=$1", [id]);
@@ -422,20 +428,30 @@ app.post("/api/products/update", async (req, res) => {
     const b = req.body || {};
     const id = Number(b.id);
     if (!id) return res.status(400).json({ error: "id manquant" });
+    const expireHours = b.expireHours !== undefined ? Number(b.expireHours) : undefined;
+    let expiresAtClause = "";
+    const params = [
+      b.title||"", b.category||"", Number(b.price)||0,
+      b.oldPrice ? Number(b.oldPrice) : null,
+      Number(b.stock)||0,
+      b.description||"", b.whatsapp||"", b.personalPhone||"",
+      b.employer||"", b.jobLocation||"", b.contractType||"",
+      b.salary||"", b.deadline||"", id,
+    ];
+    if (expireHours !== undefined) {
+      const expiresAt = expireHours > 0 ? new Date(Date.now() + expireHours * 3600000).toISOString() : null;
+      params.splice(params.length - 1, 0, expiresAt);
+      expiresAtClause = ", expires_at=$14";
+    }
+    const idPos = params.length;
     await pool.query(
       `UPDATE products SET
         title=$1, category=$2, price=$3, old_price=$4, stock=$5,
         description=$6, whatsapp=$7, personal_phone=$8,
         employer=$9, job_location=$10, contract_type=$11, salary=$12, deadline=$13
-       WHERE id=$14`,
-      [
-        b.title||"", b.category||"", Number(b.price)||0,
-        b.oldPrice ? Number(b.oldPrice) : null,
-        Number(b.stock)||0,
-        b.description||"", b.whatsapp||"", b.personalPhone||"",
-        b.employer||"", b.jobLocation||"", b.contractType||"",
-        b.salary||"", b.deadline||"", id,
-      ]
+        ${expiresAtClause}
+       WHERE id=$${idPos}`,
+      params
     );
     const { rows } = await pool.query("SELECT * FROM products WHERE id=$1", [id]);
     res.json(rows[0] ? rowToProduct(rows[0]) : { ok: true });
