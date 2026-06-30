@@ -109,6 +109,15 @@ async function initDB() {
 
     ALTER TABLE products ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
+    CREATE TABLE IF NOT EXISTS pharmacies_garde (
+      city    TEXT PRIMARY KEY,
+      name    TEXT NOT NULL,
+      address TEXT DEFAULT '',
+      phone   TEXT DEFAULT '',
+      note    TEXT DEFAULT '',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     INSERT INTO settings (id, company_name, subscription_price, sms_config)
     VALUES (1, 'ABENGOUROU-MARKET.CI', 5000,
       '{"enabled":false,"method":"POST","url":"","contentType":"application/json","headers":"","bodyTemplate":"","sender":"ABGMARKET","apiKey":""}')
@@ -379,6 +388,14 @@ app.post("/api/products", async (req, res) => {
     const isAdmin = b.ownerRole === "admin";
     const expireHours = Number(b.expireHours) || 0;
     const expiresAt = expireHours > 0 ? new Date(Date.now() + expireHours * 3600000).toISOString() : null;
+
+    // Auto-approbation : admin toujours approuvé, vendeur actif aussi approuvé
+    let autoApprove = isAdmin;
+    if (!isAdmin && b.ownerId) {
+      const { rows: vRows } = await pool.query("SELECT * FROM users WHERE id=$1", [b.ownerId]);
+      autoApprove = vRows[0] ? vendorActive(vRows[0]) : false;
+    }
+
     await pool.query(
       `INSERT INTO products
         (id,title,category,price,old_price,stock,stock_init,image,description,
@@ -391,7 +408,7 @@ app.post("/api/products", async (req, res) => {
         stock, stock, b.image||null, b.description||"",
         b.whatsapp||"", b.personalPhone||"",
         b.ownerId, b.ownerName||"", b.ownerRole||"vendeur",
-        isAdmin,
+        autoApprove,
         b.employer||"", b.jobLocation||"", b.contractType||"",
         b.salary||"", b.deadline||"", expiresAt,
       ]
@@ -1035,6 +1052,48 @@ app.get("/api/admin/export/zip", async (req, res) => {
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="amzon.zip"`);
     res.send(buf);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// ─── Santé — Pharmacie de garde ───────────────────────────────────────────────
+app.get("/api/sante/garde", async (req, res) => {
+  try {
+    const city = (req.query.city || "").trim();
+    if (!city) return res.json(null);
+    const { rows } = await pool.query(
+      "SELECT * FROM pharmacies_garde WHERE LOWER(city)=LOWER($1) LIMIT 1",
+      [city]
+    );
+    res.json(rows[0] || null);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+app.post("/api/sante/garde", async (req, res) => {
+  try {
+    const { city, name, address, phone, note } = req.body || {};
+    if (!city || !name) return res.status(400).json({ error: "city et name requis" });
+    await pool.query(`
+      INSERT INTO pharmacies_garde (city, name, address, phone, note, updated_at)
+      VALUES ($1,$2,$3,$4,$5,NOW())
+      ON CONFLICT (city) DO UPDATE
+        SET name=$2, address=$3, phone=$4, note=$5, updated_at=NOW()
+    `, [city.trim(), name.trim(), address||"", phone||"", note||""]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+app.get("/api/sante/garde/all", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM pharmacies_garde ORDER BY city ASC");
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+app.post("/api/sante/garde/delete", async (req, res) => {
+  try {
+    const { city } = req.body || {};
+    await pool.query("DELETE FROM pharmacies_garde WHERE LOWER(city)=LOWER($1)", [city||""]);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
