@@ -38,12 +38,29 @@ const BANNERS = [
 ];
 
 
-let RENCONTRES_WA = "2250767202271"; // WhatsApp admin pour Rencontres & Amitiés (mis à jour depuis les paramètres)
-// Charger le WhatsApp admin depuis les paramètres du serveur
+let RENCONTRES_WA = "2250767202271";
+let CAT_CONFIG = {}; // Config gratuit/payant par catégorie, chargée depuis les paramètres
+
+const CONFIG_CATS = [
+  ["concours-ci","📚","Concours CI"],
+  ["emploi","💼","Emploi"],
+  ["evenements","🎉","Événements"],
+  ["annonces","📢","Annonces"],
+  ["services","🔧","Services"],
+  ["immobilier","🏠","Immobilier / Terrains"],
+  ["marchandises","🛍️","Marchandises"],
+  ["residences","🏡","Résidences"],
+  ["transport","🚕","Transport"],
+  ["rencontres","❤️","Rencontres & Amitiés"],
+  ["braderie","🏷️","Braderie"],
+  ["restaurants","🍽️","Restaurants"],
+];
+
 (async () => {
   try {
     const s = await (await fetch("/api/settings")).json();
     if (s.companyWhatsapp) RENCONTRES_WA = String(s.companyWhatsapp).replace(/\D/g, "");
+    if (s.categoryConfig) CAT_CONFIG = s.categoryConfig;
   } catch {}
 })();
 const fmt = n => Number(n).toLocaleString("fr-FR") + " FCFA";
@@ -109,9 +126,10 @@ const PAID_CATS = new Set(["emploi","concours-ci","recrutement"]);
 function catMode(cat) {
   if (["concours-ci","emploi","evenements"].includes(cat)) return "info";
   if (["annonces","services","immobilier"].includes(cat)) return "whatsapp";
+  if (cat === "residences") return "reserve";
   if (cat === "sante") return "sante";
   if (cat === "scolaires") return "scolaires";
-  return "order"; // marchandises, transport, residences, etc.
+  return "order"; // marchandises, transport, braderie, restaurants…
 }
 
 async function filterCat(cat) {
@@ -153,14 +171,25 @@ async function filterCat(cat) {
     return;
   }
 
+  // Vérifier si la catégorie est payante
+  const catCfg = CAT_CONFIG[slug] || { access: "free", price: 0 };
+  const isCatPaid = catCfg.access === "paid" && Number(catCfg.price) > 0;
+
   let cardsHtml = "";
   let gridClass = "products-grid";
-  if (mode === "info") {
+
+  if (isCatPaid) {
+    gridClass = "products-grid";
+    cardsHtml = products.map(p => lockedCard(p, Number(catCfg.price), slug)).join("");
+  } else if (mode === "info") {
     gridClass = "info-cards-grid";
     cardsHtml = products.map(p => infoCard(p)).join("");
   } else if (mode === "whatsapp") {
     gridClass = "products-grid";
     cardsHtml = products.map(p => waOnlyCard(p)).join("");
+  } else if (mode === "reserve") {
+    gridClass = "products-grid";
+    cardsHtml = products.map(p => reserveCard(p)).join("");
   } else {
     gridClass = "products-grid";
     cardsHtml = products.map(p => productCard({...p, name:p.title})).join("");
@@ -294,14 +323,52 @@ function openWaDetail(p) {
     </div>`);
 }
 
-// ============ PAID LISTING CARD (Emploi / Concours-CI — conservé pour compatibilité admin) ============
-function paidListingCard(p) {
-  return infoCard(p);
+// ============ RESERVE CARD (Résidences — Réserver + WhatsApp) ============
+function reserveCard(p) {
+  const wa = (p.whatsapp || "").replace(/\D/g, "");
+  const img = p.image ? `<img src="${p.image}" alt="${p.title||p.name}" loading="lazy" />` : `<span>🏡</span>`;
+  const name = p.name || p.title || "";
+  const desc = (p.description || "").trim();
+  const pData = JSON.stringify({id:p.id,name,description:desc,image:p.image||null,whatsapp:wa,category:p.category||""}).replace(/'/g,"&#39;");
+  const msgReserve = encodeURIComponent(`Bonjour, je souhaite réserver : ${name}`);
+  const msgContact = encodeURIComponent(`Bonjour, je suis intéressé(e) par : ${name}`);
+  return `<div class="pcard" onclick='openWaDetail(${pData})' style="cursor:pointer">
+    <div class="pcard-img">${img}</div>
+    <div class="pcard-body">
+      <div class="pcard-name">${name}</div>
+      ${p.price > 0 ? `<div class="pcard-price">${fmt(p.price)}</div>` : ""}
+      ${desc ? `<div class="pcard-stock" style="color:var(--muted);font-size:12px;margin-bottom:8px">${desc.slice(0,60)}${desc.length>60?"…":""}</div>` : ""}
+      <div class="pcard-actions" style="display:flex;gap:6px;flex-direction:column">
+        ${wa ? `<button class="btn-add" style="border-radius:20px;width:100%;font-size:13px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msgReserve}','_blank')">📅 Réserver</button>` : ""}
+        ${wa ? `<button class="btn-wa" style="border-radius:20px;width:100%;font-size:13px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msgContact}','_blank')">💬 Contacter</button>` : ""}
+      </div>
+    </div>
+  </div>`;
 }
 
-function openPaidListing(p) {
-  openInfoDetail(p);
+// ============ LOCKED CARD (catégorie payante — voir via WhatsApp admin) ============
+function lockedCard(p, price, catSlug) {
+  const img = p.image ? `<img src="${p.image}" alt="${p.title||p.name}" loading="lazy" style="filter:blur(3px)" />` : `<span>🔒</span>`;
+  const name = p.title || p.name || "";
+  const catInfo = CATEGORIES.find(c=>c[0]===catSlug);
+  const catLabel = catInfo?.[2] || catSlug;
+  const msg = encodeURIComponent(`Bonjour, je souhaite accéder à l'annonce "${name}" dans la catégorie ${catLabel}. Paiement : ${fmt(price)}.`);
+  return `<div class="pcard locked-card">
+    <div class="pcard-img locked-img">${img}<div class="lock-overlay">🔒</div></div>
+    <div class="pcard-body">
+      <div class="pcard-name">${name}</div>
+      <div class="locked-badge">Accès payant</div>
+      <div class="locked-price">${fmt(price)}</div>
+      <button class="btn-locked" onclick="window.open('https://wa.me/${RENCONTRES_WA}?text=${msg}','_blank')">
+        💬 Obtenir l'accès — ${fmt(price)}
+      </button>
+    </div>
+  </div>`;
 }
+
+// ============ PAID LISTING CARD (compatibilité admin) ============
+function paidListingCard(p) { return infoCard(p); }
+function openPaidListing(p) { openInfoDetail(p); }
 
 // ============ PRODUCT CARD ============
 function productCard(p, isFlash = false) {
@@ -1645,6 +1712,29 @@ async function adminTab(which) {
     const sm = s.sms || {};
     c.innerHTML = `
       <div class="sms-settings-wrap">
+        <!-- SECTION 0: Configuration des catégories -->
+        <div class="settings-section">
+          <div class="settings-section-title">🗂️ Configuration des catégories (Accès gratuit / payant)</div>
+          <p class="form-hint" style="margin-bottom:14px">Choisissez si chaque catégorie est accessible gratuitement ou si un paiement est requis. Si payant, entrez le prix en FCFA.</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${CONFIG_CATS.map(([slug, icon, label]) => {
+              const cfg = (s.categoryConfig || {})[slug] || { access: "free", price: 0 };
+              return `<div class="cat-cfg-row">
+                <span class="cat-cfg-label">${icon} ${label}</span>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                  <select class="cat-cfg-select" id="catCfg_${slug}" onchange="toggleCatPrice('${slug}')">
+                    <option value="free" ${cfg.access==="free"?"selected":""}>🟢 Gratuit</option>
+                    <option value="paid" ${cfg.access==="paid"?"selected":""}>🔴 Payant</option>
+                  </select>
+                  <input class="cat-cfg-price" id="catPrice_${slug}" type="number"
+                    value="${cfg.price||0}" placeholder="Prix FCFA" min="0" step="100"
+                    style="width:110px;${cfg.access!=="paid"?"display:none":""}" />
+                </div>
+              </div>`;
+            }).join("")}
+          </div>
+        </div>
+
         <!-- SECTION 1: Entreprise -->
         <div class="settings-section">
           <div class="settings-section-title">🏢 Informations de l'entreprise</div>
@@ -1946,14 +2036,28 @@ async function adminSaveOrder(id) {
   else toast("Erreur","red");
 }
 
+function toggleCatPrice(slug) {
+  const sel = document.getElementById(`catCfg_${slug}`);
+  const inp = document.getElementById(`catPrice_${slug}`);
+  if (inp) inp.style.display = sel?.value === "paid" ? "" : "none";
+}
+
 async function saveSettings() {
   const waRaw = document.getElementById("setWhatsapp")?.value || "";
+  // Collecte config catégories
+  const categoryConfig = {};
+  for (const [slug] of CONFIG_CATS) {
+    const sel = document.getElementById(`catCfg_${slug}`);
+    const inp = document.getElementById(`catPrice_${slug}`);
+    if (sel) categoryConfig[slug] = { access: sel.value, price: inp ? Number(inp.value)||0 : 0 };
+  }
   const body = {
     companyName:      document.getElementById("setCompany")?.value,
     companyPhone:     document.getElementById("setPhone")?.value,
     companyEmail:     document.getElementById("setEmail")?.value,
     companyWebsite:   document.getElementById("setWebsite")?.value,
     companyWhatsapp:  waRaw.replace(/\D/g, ""),
+    categoryConfig,
     sms: {
       enabled: document.getElementById("smsEnabled").checked,
       url: document.getElementById("smsUrl").value,
