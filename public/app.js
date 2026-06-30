@@ -42,13 +42,8 @@ const BANNERS = [
 let RENCONTRES_WA = "2250767202271";
 let CAT_CONFIG = {}; // Config gratuit/payant par catégorie, chargée depuis les paramètres
 
+// Catégories standard (peuvent être gratuites ou payantes)
 const CONFIG_CATS = [
-  ["concours-ci","📚","Concours CI"],
-  ["emploi","💼","Emploi"],
-  ["pronostics","🎯","Pronostics"],
-  ["evenements","🎉","Événements"],
-  ["annonces","📢","Annonces"],
-  ["services","🔧","Services"],
   ["immobilier","🏠","Immobilier / Terrains"],
   ["marchandises","🛍️","Marchandises"],
   ["residences","🏡","Résidences"],
@@ -64,6 +59,16 @@ const CONFIG_CATS = [
   ["agriculture","🌾","Agriculture"],
   ["scolaires","🎓","Scolaires"],
   ["sante","🏥","Appel Santé"],
+  ["pronostics","🎯","Pronostics"],
+];
+
+// Services (toujours en contact WhatsApp direct — pas de prix)
+const CONFIG_SERVICE_CATS = [
+  ["emploi","💼","Emploi"],
+  ["concours-ci","📚","Concours CI"],
+  ["annonces","📢","Annonces"],
+  ["services","🔧","Services / Réparations / Travaux"],
+  ["evenements","🎉","Événements"],
   ["actualites","📰","Actualités"],
 ];
 
@@ -119,14 +124,24 @@ const updateCartCount = () => {
 
 // ============ SIDEBAR ============
 function renderSidebar(target) {
+  const regularCats = CATEGORIES.filter(([s]) => !SIDEBAR_SERVICE_SLUGS.has(s));
+  const serviceCats = CATEGORIES.filter(([s]) => SIDEBAR_SERVICE_SLUGS.has(s));
   target.innerHTML = `
     <div class="sidebar-logo"><img src="/img/logo.png" alt="logo" /></div>
     <div class="sidebar-head">NOS CATÉGORIES</div>
-    <ul>${CATEGORIES.map(([s,i,n]) => `<li><a href="#" onclick="filterCat('${s}');return false;">${i} ${n}</a></li>`).join("")}</ul>`;
+    <ul>${regularCats.map(([s,i,n]) => `<li><a href="#" onclick="filterCat('${s}');return false;">${i} ${n}</a></li>`).join("")}</ul>
+    <div class="sidebar-head sidebar-head-services">🛠️ SERVICES</div>
+    <ul>${serviceCats.map(([s,i,n]) => `<li><a href="#" onclick="filterCat('${s}');return false;">${i} ${n}</a></li>`).join("")}</ul>`;
 }
 
 // Catégories "payantes" (détails cachés — payer pour voir)
-const PAID_CATS = new Set(["emploi","concours-ci","recrutement"]);
+const PAID_CATS = new Set([]); // désactivé — toutes les catégories sont en contact direct
+
+// Catégories "services" — formulaire simple : titre, détails, WhatsApp, expiration (sans prix)
+const FORM_SERVICE_CATS = new Set(["emploi","concours-ci","annonces","services","evenements","actualites"]);
+
+// Slugs services pour la sidebar (section séparée)
+const SIDEBAR_SERVICE_SLUGS = new Set(["emploi","concours-ci","annonces","services","evenements","actualites"]);
 
 // Modes d'affichage par catégorie
 // 'info'      = informations + photo uniquement (pas de bouton d'action)
@@ -135,8 +150,7 @@ const PAID_CATS = new Set(["emploi","concours-ci","recrutement"]);
 // 'sante'     = page spéciale santé
 // 'scolaires' = page spéciale avec sous-catégories
 function catMode(cat) {
-  if (["concours-ci","emploi","evenements"].includes(cat)) return "info";
-  if (["annonces","services","immobilier"].includes(cat)) return "whatsapp";
+  if (["annonces","services","immobilier","emploi","concours-ci","evenements","actualites"].includes(cat)) return "whatsapp";
   if (cat === "residences") return "reserve";
   if (cat === "sante") return "sante";
   if (cat === "scolaires") return "scolaires";
@@ -384,14 +398,20 @@ function lockedCard(p, price, catSlug) {
 function paidListingCard(p) { return infoCard(p); }
 function openPaidListing(p) { openInfoDetail(p); }
 
+// ============ WHATSAPP ORDER HELPER ============
+function orderViaWhatsapp(wa, name) {
+  if (!wa) return toast("Aucun contact WhatsApp pour ce produit", "red");
+  window.open(`https://wa.me/${wa}?text=${encodeURIComponent("Bonjour, je suis intéressé par : " + name)}`, "_blank");
+}
+
 // ============ PRODUCT CARD ============
 function productCard(p, isFlash = false) {
   const pct = isFlash ? Math.round((p.stock/p.stockInit)*100) : null;
   const red = (p.oldPrice && p.price) ? Math.round(((p.oldPrice-p.price)/p.oldPrice)*100) : 0;
   const img = p.image ? `<img src="${p.image}" alt="${p.name||p.title}" loading="lazy" />` : `<span>${p.emoji||"🛍️"}</span>`;
   const wa = (p.whatsapp || "").replace(/\D/g, "");
-  const name = p.name || p.title || "";
-  const pData = JSON.stringify({id:p.id,name,price:p.price,oldPrice:p.oldPrice||null,stock:p.stock||0,image:p.image||null,description:p.description||"",whatsapp:wa,emoji:p.emoji||"🛍️"}).replace(/'/g,"&#39;");
+  const name = (p.name || p.title || "").replace(/"/g,"&quot;");
+  const pData = JSON.stringify({id:p.id,name:p.name||p.title||"",price:p.price,oldPrice:p.oldPrice||null,stock:p.stock||0,image:p.image||null,description:p.description||"",whatsapp:wa,emoji:p.emoji||"🛍️"}).replace(/'/g,"&#39;");
   return `<div class="pcard" onclick='openProductDetail(${pData})' style="cursor:pointer">
     <div class="pcard-img">
       ${img}
@@ -399,13 +419,12 @@ function productCard(p, isFlash = false) {
       <span class="pcard-wish">♡</span>
     </div>
     <div class="pcard-body">
-      <div class="pcard-name">${name}</div>
+      <div class="pcard-name">${p.name||p.title||""}</div>
       ${p.price > 0 ? `<div class="pcard-price">${fmt(p.price)}</div>` : ""}
       ${p.oldPrice ? `<div class="pcard-oldprice">${fmt(p.oldPrice)}</div>` : ""}
       ${isFlash && p.stock > 0 ? `<div class="stock-bar"><span style="width:${pct}%"></span></div><div class="pcard-stock">${p.stock} restants</div>` : (!isFlash && p.stock > 0 ? `<div class="pcard-stock">${p.stock} en stock</div>` : "")}
       <div class="pcard-actions">
-        <button class="btn-add" onclick='event.stopPropagation();addCart(${JSON.stringify({id:p.id,name,price:p.price,emoji:p.emoji||"🛍️",whatsapp:wa})})'>+ Panier</button>
-        ${wa ? `<button class="btn-wa" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text='+encodeURIComponent('Bonjour, article: ${name.replace(/'/g,"")}'))">W</button>` : ""}
+        <button class="btn-add" onclick='event.stopPropagation();orderViaWhatsapp("${wa}","${name}")'>📲 Commander</button>
       </div>
     </div>
   </div>`;
@@ -415,19 +434,19 @@ function openProductDetail(p) {
   const wa = (p.whatsapp || "").replace(/\D/g, "");
   const img = p.image ? `<img src="${p.image}" alt="${p.name}" style="width:100%;max-height:260px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px" />` : "";
   const desc = (p.description || "").trim();
+  const nameSafe = (p.name||"").replace(/'/g,"");
   modalHTML(`
     <h2 style="font-size:17px;margin-bottom:4px">${p.name} <button class="modal-close" onclick="closeModal()">✕</button></h2>
     ${img}
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
-      <span style="font-size:22px;font-weight:700;color:var(--primary)">${fmt(p.price)}</span>
+      ${p.price > 0 ? `<span style="font-size:22px;font-weight:700;color:var(--primary)">${fmt(p.price)}</span>` : ""}
       ${p.oldPrice ? `<span style="font-size:14px;color:var(--muted);text-decoration:line-through">${fmt(p.oldPrice)}</span>` : ""}
-      <span style="font-size:13px;color:var(--muted)">${p.stock > 0 ? p.stock+" en stock" : "Rupture de stock"}</span>
+      ${p.stock > 0 ? `<span style="font-size:13px;color:var(--muted)">${p.stock} en stock</span>` : `<span style="font-size:13px;color:#c62828">Rupture de stock</span>`}
     </div>
     ${desc ? `<div style="font-size:14px;line-height:1.7;color:var(--text);white-space:pre-line;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:var(--radius)">${desc}</div>` : ""}
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
-      ${wa ? `<button class="btn btn-secondary" onclick="window.open('https://wa.me/${wa}?text='+encodeURIComponent('Bonjour, je suis intéressé par : ${p.name.replace(/'/g,"")}'))">💬 WhatsApp</button>` : ""}
-      <button class="btn btn-primary" onclick='addCart(${JSON.stringify({id:p.id,name:p.name,price:p.price,emoji:p.emoji||"🛍️",whatsapp:wa})});closeModal()'>+ Panier</button>
+      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="window.open('https://wa.me/${wa}?text='+encodeURIComponent('Bonjour, je suis intéressé par : ${nameSafe}'),'_blank')">💬 Commander sur WhatsApp</button>` : `<span style="font-size:13px;color:var(--muted)">Aucun contact disponible</span>`}
     </div>`);
 }
 
@@ -531,8 +550,8 @@ function openRencontreDetail(p) {
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#e91e8c,#c2185b)" onclick='addCart({id:${p.id},name:${JSON.stringify(p.displayName)},price:${p.prixAcces},emoji:"❤️",isRencontre:true});closeModal()'>
-        ❤️ Accéder au profil — ${fmt(p.prixAcces)}
+      <button class="btn btn-primary" style="background:linear-gradient(135deg,#e91e8c,#c2185b)" onclick="window.open('https://wa.me/${RENCONTRES_WA}?text='+encodeURIComponent('Bonjour, je souhaite accéder au profil ${p.displayName} — paiement : ${fmt(p.prixAcces)}'),'_blank')">
+        💬 Payer &amp; Accéder au profil — ${fmt(p.prixAcces)}
       </button>
     </div>`);
 }
@@ -930,7 +949,7 @@ async function loadShop() {
 async function loadServicesSection() {
   const grid = document.getElementById("servicesGrid");
   if (!grid) return;
-  const SERVICE_CATS = ["services","annonces","evenements"];
+  const SERVICE_CATS = ["services","annonces","evenements","emploi","concours-ci","actualites"];
   let all = [];
   try { all = await (await fetch("/api/products")).json(); } catch {}
   const items = all.filter(p => SERVICE_CATS.includes(p.category));
@@ -1220,6 +1239,13 @@ async function searchSanteCity() {
   const el = document.getElementById("santeResults");
   el.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div><p>Recherche des établissements de santé à <strong>${city}</strong>…</p></div>`;
   try {
+    // Chercher la pharmacie de garde enregistrée pour cette ville
+    let gardeData = null;
+    try {
+      const gr = await fetch(`/api/sante/garde?city=${encodeURIComponent(city)}`);
+      if (gr.ok) gardeData = await gr.json();
+    } catch {}
+
     const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(city+", Côte d'Ivoire")}&format=json&limit=1`, {headers:{"Accept-Language":"fr"}});
     const nomData = await nomRes.json();
     if (!nomData.length) {
@@ -1233,22 +1259,33 @@ async function searchSanteCity() {
     const query = `[out:json][timeout:30];(node["amenity"="pharmacy"](${bbox});node["amenity"="hospital"](${bbox});node["amenity"="clinic"](${bbox});node["amenity"="doctors"](${bbox});way["amenity"="pharmacy"](${bbox});way["amenity"="hospital"](${bbox});way["amenity"="clinic"](${bbox}););out center;`;
     const ovRes = await fetch("https://overpass-api.de/api/interpreter", {method:"POST", body:query});
     const ovData = await ovRes.json();
-    if (!ovData.elements?.length) {
-      el.innerHTML = `<div class="empty-state"><div class="empty-ico">🏥</div><p>Aucun établissement de santé trouvé à <strong>${city}</strong> via OpenStreetMap.<br><small style="color:var(--muted)">Les données peuvent être incomplètes pour certaines villes.</small></p></div>`;
-      return;
-    }
-    const elems = ovData.elements;
+    const elems = ovData.elements || [];
     const pharmacies = elems.filter(e => e.tags?.amenity === "pharmacy");
     const hospitals  = elems.filter(e => e.tags?.amenity === "hospital");
     const clinics    = elems.filter(e => ["clinic","doctors"].includes(e.tags?.amenity));
-    el.innerHTML = renderSanteResults(city, pharmacies, hospitals, clinics);
+    el.innerHTML = renderSanteResults(city, pharmacies, hospitals, clinics, gardeData);
   } catch(err) {
     el.innerHTML = `<div class="empty-state"><div class="empty-ico">⚠️</div><p>Erreur de connexion. Vérifiez votre internet et réessayez.</p></div>`;
   }
 }
 
-function renderSanteResults(city, pharmacies, hospitals, clinics) {
-  const card = (e, icon) => {
+function renderSanteResults(city, pharmacies, hospitals, clinics, gardeData) {
+  const gardeCard = gardeData ? `
+    <div class="sante-garde-banner">
+      <div class="sante-garde-badge">🟢 PHARMACIE DE GARDE</div>
+      <div class="sante-static-card" style="border:2px solid #2e7d32;background:#f1f8e9">
+        <div class="sante-icon" style="background:#2e7d32">💊</div>
+        <div style="flex:1">
+          <h4 style="margin:0 0 4px;color:#1b5e20">${gardeData.name}</h4>
+          ${gardeData.address ? `<p style="font-size:12px;color:#2e7d32;margin:2px 0">📍 ${gardeData.address}</p>` : ""}
+          ${gardeData.phone ? `<p style="font-size:12px;color:#2e7d32;margin:2px 0">📞 ${gardeData.phone}</p>` : ""}
+          ${gardeData.note ? `<p style="font-size:12px;color:#388e3c;margin:4px 0;font-style:italic">${gardeData.note}</p>` : ""}
+          ${gardeData.phone ? `<a href="tel:${gardeData.phone.replace(/\s/g,"")}" style="display:inline-flex;align-items:center;gap:4px;background:#2e7d32;color:#fff;border:none;border-radius:20px;padding:6px 14px;font-size:12px;text-decoration:none;margin-top:8px;font-weight:600">📞 Appeler la garde</a>` : ""}
+        </div>
+      </div>
+    </div>` : "";
+
+  const osmCard = (e, icon, isGarde = false) => {
     const name     = e.tags?.name || e.tags?.["name:fr"] || "Établissement de santé";
     const phone    = e.tags?.phone || e.tags?.["contact:phone"] || e.tags?.["contact:mobile"] || "";
     const street   = e.tags?.["addr:street"] || "";
@@ -1257,10 +1294,11 @@ function renderSanteResults(city, pharmacies, hospitals, clinics) {
     const lon      = e.lon  || e.center?.lon;
     const mapsUrl  = lat ? `https://www.google.com/maps?q=${lat},${lon}` : null;
     const phoneClean = phone.replace(/\s/g,"");
-    return `<div class="sante-static-card">
-      <div class="sante-icon">${icon}</div>
+    const gardeMark = isGarde ? `<span style="background:#2e7d32;color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;margin-left:6px">✅ DE GARDE</span>` : "";
+    return `<div class="sante-static-card" style="${isGarde?"border:2px solid #2e7d32;background:#f1f8e9":""}">
+      <div class="sante-icon" style="${isGarde?"background:#2e7d32":""}">${icon}</div>
       <div style="flex:1">
-        <h4 style="margin:0 0 4px">${name}</h4>
+        <h4 style="margin:0 0 4px${isGarde?";color:#1b5e20":""}">${name}${gardeMark}</h4>
         ${street ? `<p style="font-size:12px;color:var(--muted);margin:2px 0">📍 ${street}</p>` : ""}
         ${phone  ? `<p style="font-size:12px;color:var(--muted);margin:2px 0">📞 ${phone}</p>` : ""}
         ${opening? `<p style="font-size:11px;color:#2e7d32;margin:2px 0">🕐 ${opening}</p>` : ""}
@@ -1271,17 +1309,29 @@ function renderSanteResults(city, pharmacies, hospitals, clinics) {
       </div>
     </div>`;
   };
-  const section = (title, icon, items) => items.length ? `
+
+  // Marquer la pharmacie de garde dans les résultats OSM si elle correspond
+  const gardeNameNorm = (gardeData?.name||"").toLowerCase().trim();
+  const markedPharmacies = pharmacies.map(e => {
+    const osmName = (e.tags?.name || "").toLowerCase();
+    return { e, isGarde: gardeNameNorm && osmName.includes(gardeNameNorm.slice(0,8)) };
+  }).sort((a,b) => b.isGarde - a.isGarde);
+
+  const section = (title, icon, items, isPharmacy = false) => items.length ? `
     <div class="sante-section" style="margin-top:20px">
       <h3 class="sante-title">${icon} ${title} <span style="font-size:13px;font-weight:400;color:var(--muted)">(${items.length})</span></h3>
-      <div class="sante-grid">${items.map(e=>card(e,icon)).join("")}</div>
+      <div class="sante-grid">${isPharmacy ? markedPharmacies.map(({e,isGarde})=>osmCard(e,icon,isGarde)).join("") : items.map(e=>osmCard(e,icon)).join("")}</div>
     </div>` : "";
-  return `<h3 style="margin-bottom:4px;color:var(--primary)">Établissements de santé à ${city}</h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Source : OpenStreetMap — données contributives</p>
-    ${section("Pharmacies","💊",pharmacies)}
+
+  const noOsmData = !pharmacies.length && !hospitals.length && !clinics.length;
+  return `
+    <h3 style="margin-bottom:4px;color:var(--primary)">Établissements de santé — ${city}</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Source : OpenStreetMap · Les données peuvent être incomplètes pour certaines villes</p>
+    ${gardeCard}
+    ${section("Pharmacies","💊",pharmacies,true)}
     ${section("Hôpitaux","🏥",hospitals)}
     ${section("Cliniques & Centres de santé","🩺",clinics)}
-    ${!pharmacies.length && !hospitals.length && !clinics.length ? '<p style="color:var(--muted)">Aucun résultat</p>' : ""}`;
+    ${noOsmData && !gardeData ? `<div class="empty-state"><div class="empty-ico">🏥</div><p>Aucun établissement trouvé à <strong>${city}</strong> via OpenStreetMap.</p></div>` : ""}`;
 }
 
 // ============ SCOLAIRES — Page avec sous-catégories ============
@@ -1480,12 +1530,15 @@ function switchFormForCat(sel) {
   const form = sel.closest("form");
   if (!form) return;
   const cat = sel.value;
+  const isService = FORM_SERVICE_CATS.has(cat);
   const isPaid = PAID_CATS.has(cat);
   const isProno = cat === "pronostics";
   const artSection = form.querySelector(".pf-article");
+  const serviceSection = form.querySelector(".pf-service");
   const jobSection = form.querySelector(".pf-job");
   const pronoSection = form.querySelector(".pf-pronos");
-  if (artSection) artSection.style.display = (isPaid || isProno) ? "none" : "";
+  if (artSection) artSection.style.display = (isService || isPaid || isProno) ? "none" : "";
+  if (serviceSection) serviceSection.style.display = isService ? "" : "none";
   if (jobSection) jobSection.style.display = isPaid ? "" : "none";
   if (pronoSection) pronoSection.style.display = isProno ? "" : "none";
 }
@@ -1538,6 +1591,7 @@ document.addEventListener("submit", async e => {
 
   const cat = f.category.value;
   const isPaid = PAID_CATS.has(cat);
+  const isService = FORM_SERVICE_CATS.has(cat);
   const isProno = cat === "pronostics";
   const expireHours = Number(f.expireHours?.value || 0);
 
@@ -1545,7 +1599,15 @@ document.addEventListener("submit", async e => {
   let price = 0, stock = 0, whatsapp = "", oldPrice = null, personalPhone = "";
   let employer = "", jobLocation = "", contractType = "", salary = "", deadline = "";
 
-  if (isProno) {
+  if (isService) {
+    const svcSec = f.querySelector(".pf-service");
+    whatsapp = svcSec?.querySelector("input[name='whatsapp']")?.value || "";
+    price = 0;
+    stock = 9999;
+    oldPrice = null;
+    personalPhone = "";
+
+  } else if (isProno) {
     // Pronostics
     const pronoType = f.pronoType?.value || "Les matchs";
     const accessType = f.querySelector("input[name='accessType']:checked")?.value || "free";
@@ -1606,6 +1668,7 @@ document.addEventListener("submit", async e => {
       f.querySelectorAll(".img-preview-wrap").forEach(w => { w.style.display = "none"; });
       f.querySelectorAll(".img-preview").forEach(i => { i.src = ""; });
       f.querySelectorAll(".pf-job").forEach(s => { s.style.display = "none"; });
+      f.querySelectorAll(".pf-service").forEach(s => { s.style.display = "none"; });
       f.querySelectorAll(".pf-pronos").forEach(s => { s.style.display = "none"; });
       f.querySelectorAll(".pf-pronos-paid").forEach(s => { s.style.display = "none"; });
       f.querySelectorAll(".pf-article").forEach(s => { s.style.display = ""; });
@@ -1664,7 +1727,21 @@ function productFormFields() {
       </div>
     </div>
 
-    <!-- SECTION : Offre Emploi / Concours -->
+    <!-- SECTION : Services (Emploi / Concours / Annonces / Services / Événements / Actualités) -->
+    <div class="pf-section pf-service" style="display:none">
+      <div class="service-hint">
+        <span>📢 Annonce service — les visiteurs vous contactent directement sur WhatsApp.</span>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>N° WhatsApp vendeur</label><input name="whatsapp" placeholder="2250700000000" /></div>
+      </div>
+      <input type="hidden" name="price" value="0" />
+      <input type="hidden" name="oldPrice" value="" />
+      <input type="hidden" name="stock" value="9999" />
+      <input type="hidden" name="personalPhone" value="" />
+    </div>
+
+    <!-- SECTION : Offre Emploi / Concours (accès payant — conservé pour usage futur) -->
     <div class="pf-section pf-job" style="display:none">
       <div class="paid-hint">
         <span>🔒 Offre payante — le client paie pour accéder aux détails complets. Remplissez tous les champs ci-dessous.</span>
@@ -1742,8 +1819,8 @@ function productFormFields() {
       </div>
     </div>
     <div class="form-group">
-      <label>Description / Détails complets <small style="color:var(--muted)">(confidentiel pour emploi/concours)</small></label>
-      <textarea name="description" rows="4" placeholder="Décrivez l'offre — profil requis, missions, conditions, comment postuler…"></textarea>
+      <label>Description / Détails complets</label>
+      <textarea name="description" rows="4" placeholder="Décrivez l'offre, le service ou l'annonce…"></textarea>
     </div>
     <div class="form-group">
       <label>⏱ Expiration de l'annonce</label>
@@ -2035,6 +2112,47 @@ async function adminTab(which) {
     area.addEventListener("dragleave", () => area.classList.remove("drag-over"));
     area.addEventListener("drop", e => { e.preventDefault(); area.classList.remove("drag-over"); const f = e.dataTransfer.files[0]; if(f) importDbFileObj(f); });
 
+  } else if (which === "garde") {
+    const rows = await (await fetch("/api/sante/garde/all")).json();
+    c.innerHTML = `
+      <h3 style="margin-bottom:6px">🟢 Gestion des pharmacies de garde</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Définissez quelle pharmacie est de garde pour chaque ville. Elle apparaîtra en vert sur la page Santé.</p>
+
+      <div class="section-block" style="margin-bottom:24px">
+        <h4 style="margin-bottom:14px">➕ Ajouter / Mettre à jour une pharmacie de garde</h4>
+        <div class="form-row">
+          <div class="form-group"><label>Ville *</label><input id="gardeCity" placeholder="Ex: Abengourou" /></div>
+          <div class="form-group"><label>Nom de la pharmacie *</label><input id="gardeName" placeholder="Ex: Pharmacie de la Paix" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Adresse</label><input id="gardeAddress" placeholder="Ex: Quartier Kossonou, Rue 12" /></div>
+          <div class="form-group"><label>Téléphone</label><input id="gardePhone" placeholder="Ex: 0708090001" /></div>
+        </div>
+        <div class="form-group"><label>Note (heures de garde, info supplémentaire)</label><input id="gardeNote" placeholder="Ex: Ouverte de 22h à 6h du matin" /></div>
+        <button class="btn btn-primary" onclick="saveGarde()">💾 Enregistrer la pharmacie de garde</button>
+        <span id="gardeMsg" style="margin-left:12px;font-size:13px"></span>
+      </div>
+
+      <div class="section-block">
+        <h4 style="margin-bottom:14px">📋 Pharmacies de garde enregistrées</h4>
+        ${rows.length === 0
+          ? `<div class="empty-state"><div class="empty-ico">💊</div><p>Aucune pharmacie de garde enregistrée.</p></div>`
+          : `<div style="display:flex;flex-direction:column;gap:10px">
+              ${rows.map(r => `
+                <div class="admin-row" style="border:1.5px solid #a5d6a7;background:#f1f8e9">
+                  <div class="admin-row-head">
+                    <div>
+                      <div class="admin-row-name" style="color:#1b5e20">🟢 ${r.name} <span style="font-size:12px;font-weight:400;color:#388e3c">— ${r.city}</span></div>
+                      <div class="admin-row-sub">${r.address ? "📍 "+r.address+" · " : ""}${r.phone ? "📞 "+r.phone : ""}${r.note ? " · "+r.note : ""}</div>
+                    </div>
+                  </div>
+                  <div class="admin-row-actions">
+                    <button class="btn btn-ghost btn-sm" onclick="deleteGarde('${r.city}')">🗑 Supprimer</button>
+                  </div>
+                </div>`).join("")}
+            </div>`}
+      </div>`;
+
   } else if (which === "settings") {
     const s = await (await fetch("/api/settings")).json();
     const sm = s.sms || {};
@@ -2042,10 +2160,33 @@ async function adminTab(which) {
       <div class="sms-settings-wrap">
         <!-- SECTION 0: Configuration des catégories -->
         <div class="settings-section">
-          <div class="settings-section-title">🗂️ Configuration des catégories (Accès gratuit / payant)</div>
+          <div class="settings-section-title">🗂️ Catégories (Accès gratuit / payant)</div>
           <p class="form-hint" style="margin-bottom:14px">Choisissez si chaque catégorie est accessible gratuitement ou si un paiement est requis. Si payant, entrez le prix en FCFA.</p>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${CONFIG_CATS.map(([slug, icon, label]) => {
+              const cfg = (s.categoryConfig || {})[slug] || { access: "free", price: 0 };
+              return `<div class="cat-cfg-row">
+                <span class="cat-cfg-label">${icon} ${label}</span>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                  <select class="cat-cfg-select" id="catCfg_${slug}" onchange="toggleCatPrice('${slug}')">
+                    <option value="free" ${cfg.access==="free"?"selected":""}>🟢 Gratuit</option>
+                    <option value="paid" ${cfg.access==="paid"?"selected":""}>🔴 Payant</option>
+                  </select>
+                  <input class="cat-cfg-price" id="catPrice_${slug}" type="number"
+                    value="${cfg.price||0}" placeholder="Prix FCFA" min="0" step="100"
+                    style="width:110px;${cfg.access!=="paid"?"display:none":""}" />
+                </div>
+              </div>`;
+            }).join("")}
+          </div>
+        </div>
+
+        <!-- SECTION 0b: Services (paid/free + expiration configurable) -->
+        <div class="settings-section">
+          <div class="settings-section-title" style="background:linear-gradient(135deg,#1565c0,#283593)">🛠️ Services (Emploi · Concours · Annonces · etc.)</div>
+          <p class="form-hint" style="margin-bottom:14px">Ces catégories peuvent être gratuites (WhatsApp direct) ou payantes (accès via paiement). Si payant, entrez le prix en FCFA.</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${CONFIG_SERVICE_CATS.map(([slug, icon, label]) => {
               const cfg = (s.categoryConfig || {})[slug] || { access: "free", price: 0 };
               return `<div class="cat-cfg-row">
                 <span class="cat-cfg-label">${icon} ${label}</span>
@@ -2370,11 +2511,41 @@ function toggleCatPrice(slug) {
   if (inp) inp.style.display = sel?.value === "paid" ? "" : "none";
 }
 
+// ============ PHARMACIE DE GARDE (admin) ============
+async function saveGarde() {
+  const city    = document.getElementById("gardeCity")?.value.trim();
+  const name    = document.getElementById("gardeName")?.value.trim();
+  const address = document.getElementById("gardeAddress")?.value.trim();
+  const phone   = document.getElementById("gardePhone")?.value.trim();
+  const note    = document.getElementById("gardeNote")?.value.trim();
+  const msg     = document.getElementById("gardeMsg");
+  if (!city || !name) return toast("Ville et nom de pharmacie requis", "red");
+  const r = await fetch("/api/sante/garde", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({city, name, address, phone, note})});
+  const d = await r.json();
+  if (d.ok) {
+    if (msg) { msg.style.color = "green"; msg.textContent = "✓ Enregistré avec succès"; }
+    toast("Pharmacie de garde enregistrée ✓", "green");
+    setTimeout(() => adminTab("garde"), 800);
+  } else {
+    if (msg) { msg.style.color = "red"; msg.textContent = "Erreur : " + (d.error||""); }
+  }
+}
+
+async function deleteGarde(city) {
+  if (!confirm(`Supprimer la pharmacie de garde pour "${city}" ?`)) return;
+  const r = await fetch("/api/sante/garde/delete", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({city})});
+  const d = await r.json();
+  if (d.ok) { toast("Supprimé", "green"); adminTab("garde"); }
+  else toast("Erreur : " + (d.error||""), "red");
+}
+
 async function saveSettings() {
   const waRaw = document.getElementById("setWhatsapp")?.value || "";
-  // Collecte config catégories
+  // Collecte config catégories (catégories + services)
   const categoryConfig = {};
-  for (const [slug] of CONFIG_CATS) {
+  for (const [slug] of [...CONFIG_CATS, ...CONFIG_SERVICE_CATS]) {
     const sel = document.getElementById(`catCfg_${slug}`);
     const inp = document.getElementById(`catPrice_${slug}`);
     if (sel) categoryConfig[slug] = { access: sel.value, price: inp ? Number(inp.value)||0 : 0 };

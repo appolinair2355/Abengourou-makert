@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/styles.css?v=3" />
 </head>
 <body>
 
@@ -232,30 +232,15 @@
             </div>
           </div>
 
-          <!-- SECTION : Offre Emploi / Concours -->
-          <div class="pf-section pf-job" style="display:none">
-            <div class="paid-hint">
-              <span>🔒 Offre payante — le client paie pour voir les détails. Remplissez bien tous les champs.</span>
+          <!-- SECTION : Services (Emploi / Concours / Annonces / Services) -->
+          <div class="pf-section pf-service" style="display:none">
+            <div class="service-hint">
+              <span>📢 Annonce service — les visiteurs vous contactent directement sur WhatsApp.</span>
             </div>
             <div class="form-row">
-              <div class="form-group"><label>Entreprise / Organisme *</label><input name="employer" placeholder="Ex: PME Abengourou / Ministère" /></div>
-              <div class="form-group"><label>Lieu / Ville *</label><input name="jobLocation" placeholder="Abengourou, Côte d'Ivoire" /></div>
+              <div class="form-group"><label>N° WhatsApp vendeur</label><input name="whatsapp" placeholder="2250700000000" /></div>
             </div>
-            <div class="form-row">
-              <div class="form-group"><label>Type de contrat</label>
-                <select name="contractType">
-                  <option value="">— Sélectionner —</option>
-                  <option>CDI</option><option>CDD</option><option>Stage</option>
-                  <option>Freelance</option><option>Concours d'entrée</option><option>Autres</option>
-                </select>
-              </div>
-              <div class="form-group"><label>Salaire / Dotation</label><input name="salary" placeholder="Ex: 200 000 FCFA/mois" /></div>
-              <div class="form-group"><label>Date limite</label><input name="deadline" type="date" /></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>Prix d'accès aux détails (FCFA) *</label><input name="price" type="number" placeholder="Ex: 500" /></div>
-              <div class="form-group"><label>N° WhatsApp contact</label><input name="whatsapp" placeholder="2250700000000" /></div>
-            </div>
+            <input type="hidden" name="price" value="0" />
             <input type="hidden" name="oldPrice" value="" />
             <input type="hidden" name="stock" value="9999" />
             <input type="hidden" name="personalPhone" value="" />
@@ -269,7 +254,18 @@
               <button type="button" class="img-preview-remove" onclick="removeImgPreview(this)">✕ Supprimer</button>
             </div>
           </div>
-          <div class="form-group"><label>Description / Détails <small style="color:var(--muted)">(confidentiel pour emploi/concours)</small></label><textarea name="description" rows="4" placeholder="Décrivez votre article ou détails de l'offre…"></textarea></div>
+          <div class="form-group"><label>Description / Détails</label><textarea name="description" rows="4" placeholder="Décrivez votre article, service ou offre…"></textarea></div>
+          <div class="form-group">
+            <label>⏱ Expiration de l'annonce</label>
+            <select name="expireHours">
+              <option value="0">Pas d'expiration</option>
+              <option value="24">24 heures</option>
+              <option value="72">3 jours</option>
+              <option value="168">7 jours</option>
+              <option value="336">15 jours</option>
+              <option value="720">30 jours</option>
+            </select>
+          </div>
           <button type="submit" data-label="Publier l'article" class="btn btn-primary btn-lg">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Publier l'article
@@ -320,6 +316,9 @@
         <button data-tab="data" onclick="adminTab('data')">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
           Données DB
+        </button>
+        <button data-tab="garde" onclick="adminTab('garde')">
+          🟢 Pharmacie de garde
         </button>
         <button data-tab="settings" onclick="adminTab('settings')">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
@@ -392,6 +391,6 @@
   <div class="modal" id="modalBody"></div>
 </div>
 
-<script src="/app.js"></script>
+<script src="/app.js?v=3"></script>
 </body>
 </html>

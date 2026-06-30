@@ -78,6 +78,7 @@ header { background: var(--primary); position: sticky; top: 0; z-index: 200; }
 .sidebar-logo img { height: 46px; }
 .sidebar ul { list-style: none; }
 .sidebar .sidebar-head { background: #212121; color: #fff; padding: 10px 16px; font-size: 13px; font-weight: 700; letter-spacing: .05em; }
+.sidebar .sidebar-head-services { background: #1565c0; color: #fff; padding: 10px 16px; font-size: 13px; font-weight: 700; letter-spacing: .05em; margin-top: 4px; }
 .sidebar li a { display: flex; align-items: center; gap: 10px; padding: 11px 16px; font-size: 14px; border-bottom: 1px solid #f5f5f5; transition: all .15s; }
 .sidebar li a:hover { background: var(--primary-light); color: var(--primary); padding-left: 22px; }
 
@@ -436,6 +437,7 @@ footer { background: #212121; color: #bdbdbd; margin-top: 40px; }
 
 /* ===== PAID HINT BANNER ===== */
 .paid-hint { display: flex; align-items: center; gap: 10px; background: #FFF8E1; border: 1.5px solid #FFD600; border-radius: var(--radius); padding: 10px 14px; margin: 4px 0 8px; font-size: 13px; font-weight: 500; color: #5d4037; line-height: 1.5; }
+.service-hint { display: flex; align-items: center; gap: 10px; background: #E3F2FD; border: 1.5px solid #1565c0; border-radius: var(--radius); padding: 10px 14px; margin: 4px 0 8px; font-size: 13px; font-weight: 500; color: #0d47a1; line-height: 1.5; }
 
 /* ===== PRODUCT FORM SECTIONS (article / emploi toggle) ===== */
 .pf-section { animation: fadeIn .2s ease; }
@@ -536,10 +538,14 @@ footer { background: #212121; color: #bdbdbd; margin-top: 40px; }
 .sante-title { font-size:16px; font-weight:700; color:var(--text); margin-bottom:10px; display:flex; align-items:center; gap:6px; }
 .sante-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
 @media (min-width:640px) { .sante-grid { grid-template-columns:repeat(3,1fr); } }
-.sante-static-card { background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:16px; border:1.5px solid var(--border); text-align:center; }
-.sante-icon { font-size:36px; margin-bottom:8px; }
+.sante-static-card { background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:14px; border:1.5px solid var(--border); display:flex; align-items:flex-start; gap:12px; }
+.sante-icon { font-size:26px; background:#E8F5E9; border-radius:50%; width:46px; height:46px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .sante-static-card h4 { font-size:14px; font-weight:700; margin-bottom:4px; color:var(--text); }
 .sante-static-card p { font-size:12px; color:var(--muted); line-height:1.4; }
+
+/* ===== SANTE — PHARMACIE DE GARDE ===== */
+.sante-garde-banner { margin-bottom:20px; }
+.sante-garde-badge { display:inline-block; background:#2e7d32; color:#fff; font-size:13px; font-weight:800; letter-spacing:.5px; border-radius:20px; padding:6px 18px; margin-bottom:10px; box-shadow:0 2px 6px rgba(46,125,50,.3); }
 
 /* ===== SCOLAIRES ===== */
 .scolaire-subcats { display:flex; gap:8px; overflow-x:auto; padding:12px 0; scrollbar-width:none; }
