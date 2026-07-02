@@ -14,7 +14,7 @@ const CATEGORIES = [
   ["scolaires","🎓","Scolaires"],
   ["sante","🏥","Appel Santé"],
   ["evenements","🎉","Événements"],
-  ["annonces","📢","Annonces"],
+  ["cabine-en-ligne","IMG:/img/cabine-en-ligne.png","Cabine en Ligne"],
   ["actualites","📰","Actualités"],
   ["concours-ci","📚","Concours CI"],
   ["emploi","💼","Emploi"],
@@ -25,8 +25,8 @@ const CATEGORIES = [
 ];
 
 const SHORTCUTS = [
-  ["📚","Concours CI","concours-ci"],["💼","Emploi","emploi"],["🏠","Immobilier","immobilier"],
-  ["🚕","Taxi","transport"],["🍽️","Livraison","restaurants"],["📢","Annonces","annonces"],
+  ["IMG:/img/cabine-en-ligne.png","Cabine en Ligne","cabine-en-ligne"],["💼","Emploi","emploi"],["🏠","Immobilier","immobilier"],
+  ["🚕","Taxi","transport"],["🍽️","Livraison","restaurants"],["📚","Concours","concours-ci"],
   ["❤️","Rencontres","rencontres"],["🏷️","Braderie","braderie"],
 ];
 
@@ -41,6 +41,7 @@ const BANNERS = [
 
 let RENCONTRES_WA = "2250767202271";
 let CAT_CONFIG = {}; // Config gratuit/payant par catégorie, chargée depuis les paramètres
+let CABINE_PAYMENT_LINK = "https://pay.wave.com/m/M_ci_CRgdcq5dsx3B/c/ci/";
 
 // Catégories standard (peuvent être gratuites ou payantes)
 const CONFIG_CATS = [
@@ -66,7 +67,6 @@ const CONFIG_CATS = [
 const CONFIG_SERVICE_CATS = [
   ["emploi","💼","Emploi"],
   ["concours-ci","📚","Concours CI"],
-  ["annonces","📢","Annonces"],
   ["services","🔧","Services / Réparations / Travaux"],
   ["evenements","🎉","Événements"],
   ["actualites","📰","Actualités"],
@@ -77,6 +77,7 @@ const CONFIG_SERVICE_CATS = [
     const s = await (await fetch("/api/settings")).json();
     if (s.companyWhatsapp) RENCONTRES_WA = String(s.companyWhatsapp).replace(/\D/g, "");
     if (s.categoryConfig) CAT_CONFIG = s.categoryConfig;
+    if (s.cabinePaymentLink) CABINE_PAYMENT_LINK = s.cabinePaymentLink;
   } catch {}
 })();
 const fmt = n => Number(n).toLocaleString("fr-FR") + " FCFA";
@@ -126,22 +127,23 @@ const updateCartCount = () => {
 function renderSidebar(target) {
   const regularCats = CATEGORIES.filter(([s]) => !SIDEBAR_SERVICE_SLUGS.has(s));
   const serviceCats = CATEGORIES.filter(([s]) => SIDEBAR_SERVICE_SLUGS.has(s));
+  const renderIco = (i) => i.startsWith("IMG:") ? `<img src="${i.slice(4)}" style="width:18px;height:18px;object-fit:contain;border-radius:3px;vertical-align:middle;margin-right:2px" />` : i;
   target.innerHTML = `
     <div class="sidebar-logo"><img src="/img/logo.png" alt="logo" /></div>
     <div class="sidebar-head">NOS CATÉGORIES</div>
-    <ul>${regularCats.map(([s,i,n]) => `<li><a href="#" onclick="filterCat('${s}');return false;">${i} ${n}</a></li>`).join("")}</ul>
+    <ul>${regularCats.map(([s,i,n]) => `<li><a href="#" onclick="filterCat('${s}');return false;">${renderIco(i)} ${n}</a></li>`).join("")}</ul>
     <div class="sidebar-head sidebar-head-services">🛠️ SERVICES</div>
-    <ul>${serviceCats.map(([s,i,n]) => `<li><a href="#" onclick="filterCat('${s}');return false;">${i} ${n}</a></li>`).join("")}</ul>`;
+    <ul>${serviceCats.map(([s,i,n]) => `<li><a href="#" onclick="filterCat('${s}');return false;">${renderIco(i)} ${n}</a></li>`).join("")}</ul>`;
 }
 
 // Catégories "payantes" (détails cachés — payer pour voir)
 const PAID_CATS = new Set([]); // désactivé — toutes les catégories sont en contact direct
 
 // Catégories "services" — formulaire simple : titre, détails, WhatsApp, expiration (sans prix)
-const FORM_SERVICE_CATS = new Set(["emploi","concours-ci","annonces","services","evenements","actualites"]);
+const FORM_SERVICE_CATS = new Set(["emploi","concours-ci","services","evenements","actualites"]);
 
 // Slugs services pour la sidebar (section séparée)
-const SIDEBAR_SERVICE_SLUGS = new Set(["emploi","concours-ci","annonces","services","evenements","actualites"]);
+const SIDEBAR_SERVICE_SLUGS = new Set(["emploi","concours-ci","cabine-en-ligne","services","evenements","actualites"]);
 
 // Modes d'affichage par catégorie
 // 'info'      = informations + photo uniquement (pas de bouton d'action)
@@ -150,7 +152,7 @@ const SIDEBAR_SERVICE_SLUGS = new Set(["emploi","concours-ci","annonces","servic
 // 'sante'     = page spéciale santé
 // 'scolaires' = page spéciale avec sous-catégories
 function catMode(cat) {
-  if (["annonces","services","immobilier","emploi","concours-ci","evenements","actualites"].includes(cat)) return "whatsapp";
+  if (["services","immobilier","emploi","concours-ci","evenements","actualites"].includes(cat)) return "whatsapp";
   if (cat === "residences") return "reserve";
   if (cat === "sante") return "sante";
   if (cat === "scolaires") return "scolaires";
@@ -160,6 +162,7 @@ function catMode(cat) {
 
 async function filterCat(cat) {
   document.getElementById("mobileSidebar").classList.remove("show");
+  if (cat === "cabine-en-ligne") return showCabineEnLignePage();
   if (cat === "rencontres") return showRencontresPage();
   if (cat === "sante") return showSantePage();
   if (cat === "scolaires") return showScolairesPage();
@@ -233,9 +236,12 @@ async function filterCat(cat) {
 function renderCatNav() {
   const el = document.getElementById("catNavLinks");
   if (!el) return;
-  el.innerHTML = CATEGORIES.slice(0, 12).map(([s,i,n]) =>
-    `<a href="#" onclick="filterCat('${s}');return false;">${i} ${n}</a>`
-  ).join("");
+  el.innerHTML = CATEGORIES.slice(0, 12).map(([s,i,n]) => {
+    const icoHtml = i.startsWith("IMG:")
+      ? `<img src="${i.slice(4)}" style="width:18px;height:18px;object-fit:contain;border-radius:3px;vertical-align:middle" />`
+      : i;
+    return `<a href="#" onclick="filterCat('${s}');return false;">${icoHtml} ${n}</a>`;
+  }).join("");
 }
 
 // ============ CAROUSEL ============
@@ -330,7 +336,7 @@ function waOnlyCard(p) {
       <div class="pcard-name">${name}</div>
       ${desc ? `<div class="pcard-stock" style="color:var(--muted);font-size:12px;margin-bottom:8px">${desc.slice(0,60)}${desc.length>60?"…":""}</div>` : ""}
       <div class="pcard-actions">
-        ${wa ? `<button class="btn-wa" style="width:100%;border-radius:20px;padding:8px;font-size:13px;background:#25D366;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msg}','_blank')">📲 Commander / Payer</button>` : `<span style="font-size:12px;color:var(--muted)">Aucun contact disponible</span>`}
+        ${wa ? `<button class="btn-wa" style="width:100%;border-radius:20px;padding:8px;font-size:13px;background:#25D366;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px" onclick="event.stopPropagation();waOpen('${wa}','${msg}','${name.replace(/'/g,"")}')">📲 Commander / Payer</button>` : `<span style="font-size:12px;color:var(--muted)">Aucun contact disponible</span>`}
       </div>
     </div>
   </div>`;
@@ -346,7 +352,7 @@ function openWaDetail(p) {
     ${p.description ? `<div style="font-size:14px;line-height:1.7;color:var(--text);white-space:pre-line;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:var(--radius)">${p.description}</div>` : ""}
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
-      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="window.open('https://wa.me/${wa}?text=${msg}','_blank')">📲 Commander / Payer</button>` : ""}
+      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="waOpen('${wa}','${msg}','${(p.name||'').replace(/'/g,'')}')">📲 Commander / Payer</button>` : ""}
     </div>`);
 }
 
@@ -366,8 +372,8 @@ function reserveCard(p) {
       ${p.price > 0 ? `<div class="pcard-price">${fmt(p.price)}</div>` : ""}
       ${desc ? `<div class="pcard-stock" style="color:var(--muted);font-size:12px;margin-bottom:8px">${desc.slice(0,60)}${desc.length>60?"…":""}</div>` : ""}
       <div class="pcard-actions" style="display:flex;gap:6px;flex-direction:column">
-        ${wa ? `<button class="btn-add" style="border-radius:20px;width:100%;font-size:13px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msgReserve}','_blank')">📅 Réserver</button>` : ""}
-        ${wa ? `<button class="btn-wa" style="border-radius:20px;width:100%;font-size:13px" onclick="event.stopPropagation();window.open('https://wa.me/${wa}?text=${msgContact}','_blank')">💬 Contacter</button>` : ""}
+        ${wa ? `<button class="btn-add" style="border-radius:20px;width:100%;font-size:13px" onclick="event.stopPropagation();waOpen('${wa}','${msgReserve}','${name.replace(/'/g,"")}')">📅 Réserver</button>` : ""}
+        ${wa ? `<button class="btn-wa" style="border-radius:20px;width:100%;font-size:13px" onclick="event.stopPropagation();waOpen('${wa}','${msgContact}','${name.replace(/'/g,"")}')">💬 Contacter</button>` : ""}
       </div>
     </div>
   </div>`;
@@ -387,7 +393,7 @@ function lockedCard(p, price, catSlug) {
       <div class="pcard-name">${name}</div>
       <div class="locked-badge">Accès payant</div>
       <div class="locked-price">${fmt(price)}</div>
-      <button class="btn-locked" onclick="window.open('https://wa.me/${contactWA}?text=${msg}','_blank')">
+      <button class="btn-locked" onclick="waOpen('${contactWA}','${msg}','${name.replace(/'/g,"")}')">
         💬 Obtenir l'accès — ${fmt(price)}
       </button>
     </div>
@@ -398,10 +404,22 @@ function lockedCard(p, price, catSlug) {
 function paidListingCard(p) { return infoCard(p); }
 function openPaidListing(p) { openInfoDetail(p); }
 
+// ============ WHATSAPP WRAPPER — notifie le vendeur par SMS puis ouvre WhatsApp ============
+function waOpen(wa, encodedText, productName) {
+  if (wa) {
+    fetch("/api/notify-vendor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vendorPhone: wa, productName: productName || "" })
+    }).catch(() => {});
+  }
+  window.open("https://wa.me/" + wa + "?text=" + encodedText, "_blank");
+}
+
 // ============ WHATSAPP ORDER HELPER ============
 function orderViaWhatsapp(wa, name) {
   if (!wa) return toast("Aucun contact WhatsApp pour ce produit", "red");
-  window.open(`https://wa.me/${wa}?text=${encodeURIComponent("Bonjour, je suis intéressé par : " + name)}`, "_blank");
+  waOpen(wa, encodeURIComponent("Bonjour, je suis intéressé par : " + name), name);
 }
 
 // ============ PRODUCT CARD ============
@@ -446,7 +464,7 @@ function openProductDetail(p) {
     ${desc ? `<div style="font-size:14px;line-height:1.7;color:var(--text);white-space:pre-line;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:var(--radius)">${desc}</div>` : ""}
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
-      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="window.open('https://wa.me/${wa}?text='+encodeURIComponent('Bonjour, je suis intéressé par : ${nameSafe}'),'_blank')">💬 Commander sur WhatsApp</button>` : `<span style="font-size:13px;color:var(--muted)">Aucun contact disponible</span>`}
+      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366" onclick="waOpen('${wa}',encodeURIComponent('Bonjour, je suis intéressé par : ${nameSafe}'),'${nameSafe}')">💬 Commander sur WhatsApp</button>` : `<span style="font-size:13px;color:var(--muted)">Aucun contact disponible</span>`}
     </div>`);
 }
 
@@ -550,7 +568,7 @@ function openRencontreDetail(p) {
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#e91e8c,#c2185b)" onclick="window.open('https://wa.me/${RENCONTRES_WA}?text='+encodeURIComponent('Bonjour, je souhaite accéder au profil ${p.displayName} — paiement : ${fmt(p.prixAcces)}'),'_blank')">
+      <button class="btn btn-primary" style="background:linear-gradient(135deg,#e91e8c,#c2185b)" onclick="waOpen('${RENCONTRES_WA}',encodeURIComponent('Bonjour, je souhaite accéder au profil ${p.displayName} — paiement : ${fmt(p.prixAcces)}'),'${(p.displayName||'').replace(/'/g,'')}')">
         💬 Payer &amp; Accéder au profil — ${fmt(p.prixAcces)}
       </button>
     </div>`);
@@ -781,6 +799,183 @@ function pronosticFreeCard(p) {
   </div>`;
 }
 
+// ============ CABINE EN LIGNE ============
+const CABINE_OPERATEURS = [
+  { val:"ORANGE",      label:"Orange CI",     ico:"🟠", bg:"#FF6B00", color:"#fff", border:"#c85000" },
+  { val:"MTN",         label:"MTN CI",        ico:"🟡", bg:"#FFC107", color:"#1a1a1a", border:"#e6a800" },
+  { val:"MOOV",        label:"Moov Africa",   ico:"🔵", bg:"#1565C0", color:"#fff", border:"#0d47a1" },
+  { val:"WAVE",        label:"Wave",          ico:"🌊", bg:"#1DA1F2", color:"#fff", border:"#0d8de0" },
+];
+const CABINE_SERVICES = [
+  { val:"APPEL",         label:"Crédit Appel",  ico:"📞", bg:"#2e7d32", color:"#fff" },
+  { val:"INTERNET",      label:"Forfait Internet", ico:"🌐", bg:"#1565C0", color:"#fff" },
+  { val:"UNITÉS",        label:"Unités / Recharge", ico:"📶", bg:"#6a1b9a", color:"#fff" },
+  { val:"MOBILE MONEY",  label:"Mobile Money",  ico:"💰", bg:"#e65100", color:"#fff" },
+];
+let _cabineOp = "", _cabineSvc = "";
+
+function showCabineEnLignePage() {
+  document.getElementById("mobileSidebar").classList.remove("show");
+  _cabineOp = ""; _cabineSvc = "";
+  showPage("page-category");
+  const wrap = document.getElementById("catPageContent");
+  wrap.innerHTML = `
+    <div class="cat-page-header">
+      <span class="cat-page-icon"><img src="/img/cabine-en-ligne.png" style="width:56px;height:56px;object-fit:contain;border-radius:12px" /></span>
+      <div>
+        <h2>Cabine en Ligne</h2>
+        <p>Recharge · Crédit Appel · Internet · Mobile Money</p>
+      </div>
+    </div>
+    <div class="section-block" style="max-width:520px;margin:0 auto">
+      <div style="display:flex;flex-direction:column;gap:22px;padding:8px 0">
+
+        <!-- ÉTAPE 1: OPÉRATEUR -->
+        <div class="form-group">
+          <label style="font-weight:700;font-size:15px;margin-bottom:12px;display:block">
+            <span style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:#fff;border-radius:50%;width:24px;height:24px;font-size:13px;margin-right:6px">1</span>
+            CHOIX DE L'OPÉRATEUR
+          </label>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+            ${CABINE_OPERATEURS.map(o => `
+              <button class="cabine-op-btn" data-op="${o.val}"
+                onclick="selectCabineOp('${o.val}')"
+                style="background:${o.bg};color:${o.color};border:3px solid transparent;border-radius:14px;padding:14px 8px;font-size:14px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:7px;transition:all .18s;box-shadow:0 2px 8px rgba(0,0,0,.12)">
+                <span style="font-size:32px;line-height:1">${o.ico}</span>
+                <span style="font-size:13px">${o.label}</span>
+              </button>`).join("")}
+          </div>
+          <div id="cabineOpMsg" style="display:none;margin-top:8px;font-size:13px;color:#2e7d32;font-weight:600;padding:6px 10px;background:#e8f5e9;border-radius:8px"></div>
+        </div>
+
+        <!-- ÉTAPE 2: NUMÉRO -->
+        <div class="form-group">
+          <label style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px">
+            <span style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:#fff;border-radius:50%;width:24px;height:24px;font-size:13px">2</span>
+            NUMÉRO À RECHARGER
+          </label>
+          <input id="cabineNumero" type="tel" placeholder="Ex : 07 07 00 00 00"
+            style="width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:var(--radius);font-size:16px;margin-top:10px;box-sizing:border-box;letter-spacing:1px" />
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">📍 Numéro CI — ex : 0707000000 ou 0505000000</div>
+        </div>
+
+        <!-- ÉTAPE 3: SERVICE -->
+        <div class="form-group">
+          <label style="font-weight:700;font-size:15px;margin-bottom:12px;display:block">
+            <span style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:#fff;border-radius:50%;width:24px;height:24px;font-size:13px;margin-right:6px">3</span>
+            TYPE DE SERVICE
+          </label>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+            ${CABINE_SERVICES.map(sv => `
+              <button class="cabine-svc-btn" data-svc="${sv.val}" data-bg="${sv.bg}" data-color="${sv.color}"
+                onclick="selectCabineSvc('${sv.val}')"
+                style="background:#f8f8f8;color:#333;border:2px solid #e0e0e0;border-radius:12px;padding:12px 8px;font-size:13px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all .18s">
+                <span style="font-size:26px;line-height:1">${sv.ico}</span>
+                <span style="text-align:center;line-height:1.3">${sv.label}</span>
+              </button>`).join("")}
+          </div>
+          <div id="cabineSvcMsg" style="display:none;margin-top:8px;font-size:13px;color:#2e7d32;font-weight:600;padding:6px 10px;background:#e8f5e9;border-radius:8px"></div>
+        </div>
+
+        <!-- BOUTON PAYER -->
+        <button class="btn btn-primary btn-lg"
+          style="background:linear-gradient(135deg,#1a237e,#0d47a1);font-size:17px;font-weight:700;padding:18px;letter-spacing:1px;border-radius:var(--radius);border:none;cursor:pointer;color:#fff;margin-top:4px;width:100%"
+          onclick="cabinePayer()">
+          💳 PAYER MAINTENANT
+        </button>
+        <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:-10px">
+          🔒 Paiement sécurisé · L'administrateur est notifié automatiquement
+        </div>
+      </div>
+    </div>`;
+}
+
+function selectCabineOp(val) {
+  _cabineOp = val;
+  const op = CABINE_OPERATEURS.find(o => o.val === val);
+  document.querySelectorAll(".cabine-op-btn").forEach(b => {
+    const sel = b.dataset.op === val;
+    b.style.outline = sel ? "3px solid #fff" : "none";
+    b.style.boxShadow = sel ? `0 0 0 4px ${op.border},0 4px 16px rgba(0,0,0,.18)` : "0 2px 8px rgba(0,0,0,.12)";
+    b.style.transform = sel ? "scale(1.05)" : "scale(1)";
+  });
+  const el = document.getElementById("cabineOpMsg");
+  if (el && op) { el.style.display = "block"; el.textContent = `✓ ${op.ico} ${op.label} sélectionné`; }
+}
+
+function selectCabineSvc(val) {
+  _cabineSvc = val;
+  const sv = CABINE_SERVICES.find(s => s.val === val);
+  document.querySelectorAll(".cabine-svc-btn").forEach(b => {
+    const sel = b.dataset.svc === val;
+    b.style.background = sel ? b.dataset.bg : "#f8f8f8";
+    b.style.color      = sel ? b.dataset.color : "#333";
+    b.style.border     = sel ? `2px solid ${b.dataset.bg}` : "2px solid #e0e0e0";
+    b.style.transform  = sel ? "scale(1.05)" : "scale(1)";
+    b.style.boxShadow  = sel ? `0 4px 12px rgba(0,0,0,.18)` : "none";
+  });
+  const el = document.getElementById("cabineSvcMsg");
+  if (el && sv) { el.style.display = "block"; el.textContent = `✓ ${sv.ico} ${sv.label} sélectionné`; }
+}
+
+function cabinePayer() {
+  if (!_cabineOp) return toast("Choisissez un opérateur", "red");
+  const num = (document.getElementById("cabineNumero")?.value || "").trim();
+  if (!num) return toast("Entrez le numéro à recharger", "red");
+  if (!_cabineSvc) return toast("Choisissez un type de service", "red");
+
+  const op  = _cabineOp;
+  const svc = _cabineSvc;
+  const opInfo  = CABINE_OPERATEURS.find(o => o.val === op) || {};
+  const svcInfo = CABINE_SERVICES.find(s => s.val === svc) || {};
+  const waMsg = encodeURIComponent(
+    `🎟 Commande Cabine en Ligne\n` +
+    `${opInfo.ico || "📱"} Opérateur : ${op}\n` +
+    `☎️ Numéro : ${num}\n` +
+    `⚙️ Service : ${svc}\n\n` +
+    `Merci de traiter cette commande.`
+  );
+  const smsText = `Cabine : ${svc} ${op} → ${num}`;
+
+  // 1. Ouvrir le lien de paiement immédiatement
+  window.open(CABINE_PAYMENT_LINK, "_blank");
+
+  // 2. Envoyer SMS admin (fire-and-forget)
+  if (RENCONTRES_WA) {
+    fetch("/api/notify-vendor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vendorPhone: RENCONTRES_WA, productName: smsText })
+    }).catch(() => {});
+  }
+
+  // 3. Afficher modale de confirmation → bouton WhatsApp admin
+  modalHTML(`
+    <h2 style="font-size:17px;color:#1a237e;margin-bottom:6px">
+      ✅ Paiement initié
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </h2>
+    <div style="background:#e8f5e9;border-left:4px solid #2e7d32;border-radius:0 var(--radius) var(--radius) 0;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
+      <strong>Récapitulatif de la commande :</strong><br>
+      ${opInfo.ico || "📱"} Opérateur : <strong>${op}</strong><br>
+      ☎️ Numéro : <strong>${num}</strong><br>
+      ⚙️ Service : <strong>${svc}</strong>
+    </div>
+    <p style="font-size:13px;color:var(--text);margin-bottom:16px;line-height:1.6">
+      Le lien de paiement a été ouvert. Une fois le paiement effectué, confirmez votre commande à l'administrateur via WhatsApp.
+    </p>
+    <div class="btn-row" style="flex-direction:column;gap:10px">
+      <button class="btn btn-primary" style="background:#25D366;border-color:#25D366;font-size:15px;padding:14px"
+        onclick="closeModal();window.open('https://wa.me/${RENCONTRES_WA}?text=${waMsg}','_blank')">
+        💬 Confirmer sur WhatsApp
+      </button>
+      <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">
+      📱 Un SMS a été envoyé automatiquement à l'administrateur
+    </div>`);
+}
+
 // ============ PAGE 2 TABS : Concours / Actualités / Emploi ============
 let _page2All = null;
 async function switchPage2Tab(cat, btn) {
@@ -807,9 +1002,12 @@ function renderHome() {
   renderCatNav();
   renderCarousel();
 
-  document.getElementById("shortcuts").innerHTML = SHORTCUTS.map(([i,n,cat]) =>
-    `<a href="#" class="shortcut" onclick="filterCat('${cat}');return false;"><span class="ico">${i}</span><span>${n}</span></a>`
-  ).join("");
+  document.getElementById("shortcuts").innerHTML = SHORTCUTS.map(([i,n,cat]) => {
+    const icoHtml = i.startsWith("IMG:")
+      ? `<img src="${i.slice(4)}" style="width:36px;height:36px;object-fit:contain;border-radius:6px" />`
+      : i;
+    return `<a href="#" class="shortcut" onclick="filterCat('${cat}');return false;"><span class="ico">${icoHtml}</span><span>${n}</span></a>`;
+  }).join("");
 
   switchPage2Tab("concours", document.querySelector(".page2-tab.active"));
 
@@ -886,7 +1084,7 @@ async function loadTransportSection() {
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn-add" style="flex:1;border-radius:20px"
           onclick='addCart({id:${p.id},name:"${p.title.replace(/"/g,"&quot;")}",price:${p.price},emoji:"🚕",whatsapp:"${wa}"})'>🛒 Commander</button>
-        ${wa ? `<button class="btn-wa" style="border-radius:20px;padding:8px 14px" onclick="window.open('https://wa.me/${wa}?text=${msg}','_blank')">W</button>` : ""}
+        ${wa ? `<button class="btn-wa" style="border-radius:20px;padding:8px 14px" onclick="waOpen('${wa}','${msg}','${(p.title||'').replace(/'/g,'')}')">W</button>` : ""}
       </div>
     </div>`;
   }).join("");
@@ -913,7 +1111,7 @@ async function loadNewsSection() {
 }
 
 // ============ LOAD SHOP (API) — vue par catégories ============
-const SHOP_EXCLUDED = new Set(["rencontres","sante","scolaires","pronostics","transport","immobilier","restaurants","actualites","concours-ci","emploi","recrutement"]);
+const SHOP_EXCLUDED = new Set(["rencontres","sante","scolaires","pronostics","transport","immobilier","restaurants","actualites","concours-ci","emploi","recrutement","cabine-en-ligne"]);
 
 async function loadShop() {
   const grid = document.getElementById("shopGrid");
@@ -956,11 +1154,11 @@ async function loadShop() {
   }).join("");
 }
 
-// ============ SECTION SERVICES & ANNONCES ============
+// ============ SECTION SERVICES ============
 async function loadServicesSection() {
   const grid = document.getElementById("servicesGrid");
   if (!grid) return;
-  const SERVICE_CATS = ["services","annonces","evenements"];
+  const SERVICE_CATS = ["services","evenements"];
   let all = [];
   try { all = await (await fetch("/api/products")).json(); } catch {}
   const items = all.filter(p => SERVICE_CATS.includes(p.category));
@@ -1491,7 +1689,7 @@ function showVendeur() {
   showPage("page-vendeur");
   const sel = document.getElementById("catSelect");
   if (sel) {
-    sel.innerHTML = CATEGORIES.map(([s,_,n]) => `<option value="${s}">${n}</option>`).join("");
+    sel.innerHTML = CATEGORIES.filter(([s]) => s !== "cabine-en-ligne").map(([s,_,n]) => `<option value="${s}">${n}</option>`).join("");
     switchFormForCat(sel);
   }
   const banner = document.getElementById("subBanner");
@@ -2205,7 +2403,7 @@ async function adminTab(which) {
 
         <!-- SECTION 0b: Services (paid/free + expiration configurable) -->
         <div class="settings-section">
-          <div class="settings-section-title" style="background:linear-gradient(135deg,#1565c0,#283593)">🛠️ Services (Emploi · Concours · Annonces · etc.)</div>
+          <div class="settings-section-title" style="background:linear-gradient(135deg,#1565c0,#283593)">🛠️ Services (Emploi · Concours · etc.)</div>
           <p class="form-hint" style="margin-bottom:14px">Ces catégories peuvent être gratuites (WhatsApp direct) ou payantes (accès via paiement). Si payant, entrez le prix en FCFA.</p>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${CONFIG_SERVICE_CATS.map(([slug, icon, label]) => {
@@ -2223,6 +2421,47 @@ async function adminTab(which) {
                 </div>
               </div>`;
             }).join("")}
+          </div>
+        </div>
+
+        <!-- SECTION IKODDI: Configuration SMS -->
+        <div class="settings-section">
+          <div class="settings-section-title" style="background:linear-gradient(135deg,#1b5e20,#2e7d32)">📱 IKODDI SMS — Notifications vendeurs</div>
+          <p class="form-hint" style="margin-bottom:14px">Quand un client clique sur <strong>Commander / Payer</strong>, un SMS est automatiquement envoyé au vendeur via l'API IKODDI. Remplissez les champs ci-dessous pour activer cette fonction.</p>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="setIkoddiEnabled" ${s.ikoddiEnabled !== false ? "checked" : ""} style="width:16px;height:16px" />
+              Activer les notifications SMS IKODDI
+            </label>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label>🔑 Clé API IKODDI</label>
+            <input id="setIkoddiKey" value="${s.ikoddiApiKey || "cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9"}" placeholder="cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9" />
+            <div class="form-hint">Clé API fournie dans votre tableau de bord <a href="https://app.ikoddi.com" target="_blank">app.ikoddi.com</a>.</div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label>🏢 IKODDI Group ID (Organisation)</label>
+            <input id="setIkoddiGroup" value="${s.ikoddiGroupId || ""}" placeholder="ex: 6633a4b9e..." />
+            <div class="form-hint">Identifiant de votre organisation IKODDI (visible dans les paramètres du compte).</div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label>📤 Test SMS (numéro de test)</label>
+            <div style="display:flex;gap:8px">
+              <input id="smsTestNum" placeholder="+2250700000000" style="flex:1" />
+              <button class="btn btn-primary" onclick="testSMS()" style="white-space:nowrap">📤 Tester</button>
+            </div>
+            <div class="form-hint">Entrez un numéro Côte d'Ivoire (ex : 2250700000000) et cliquez sur Tester.</div>
+          </div>
+        </div>
+
+        <!-- SECTION CABINE: Lien de paiement Cabine en Ligne -->
+        <div class="settings-section">
+          <div class="settings-section-title" style="background:linear-gradient(135deg,#1a237e,#0d47a1)">📲 Cabine en Ligne — Lien de paiement</div>
+          <p class="form-hint" style="margin-bottom:14px">Ce lien est affiché au client quand il clique sur <strong>PAYER</strong> dans la Cabine en Ligne. Seul l'administrateur peut le modifier.</p>
+          <div class="form-group">
+            <label>Lien de paiement (Wave, Orange Money, etc.)</label>
+            <input id="setCabineLink" value="${s.cabinePaymentLink || "https://pay.wave.com/m/M_ci_CRgdcq5dsx3B/c/ci/"}" placeholder="https://pay.wave.com/..." />
+            <div class="form-hint">Ex : https://pay.wave.com/m/… — modifiable à tout moment.</div>
           </div>
         </div>
 
@@ -2517,16 +2756,21 @@ async function saveSettings() {
     if (sel) categoryConfig[slug] = { access: sel.value, price: inp ? Number(inp.value)||0 : 0 };
   }
   const body = {
-    companyName:      document.getElementById("setCompany")?.value,
-    companyPhone:     document.getElementById("setPhone")?.value,
-    companyEmail:     document.getElementById("setEmail")?.value,
-    companyWebsite:   document.getElementById("setWebsite")?.value,
-    companyWhatsapp:  waRaw.replace(/\D/g, ""),
+    companyName:        document.getElementById("setCompany")?.value,
+    companyPhone:       document.getElementById("setPhone")?.value,
+    companyEmail:       document.getElementById("setEmail")?.value,
+    companyWebsite:     document.getElementById("setWebsite")?.value,
+    companyWhatsapp:    waRaw.replace(/\D/g, ""),
     categoryConfig,
+    cabinePaymentLink:  document.getElementById("setCabineLink")?.value || "",
+    ikoddiApiKey:       document.getElementById("setIkoddiKey")?.value || "",
+    ikoddiGroupId:      document.getElementById("setIkoddiGroup")?.value || "",
+    ikoddiEnabled:      document.getElementById("setIkoddiEnabled")?.checked ?? true,
   };
   await fetch("/api/settings", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
-  // Mettre à jour le WhatsApp admin en mémoire
+  // Mettre à jour les variables en mémoire
   if (body.companyWhatsapp) RENCONTRES_WA = body.companyWhatsapp;
+  if (body.cabinePaymentLink) CABINE_PAYMENT_LINK = body.cabinePaymentLink;
   // Mettre à jour le footer dynamiquement
   if (body.companyPhone) { const el = document.getElementById("footerPhone"); if(el) el.textContent = body.companyPhone; const eh = document.getElementById("headerPhone"); if(eh) eh.textContent = body.companyPhone; }
   if (body.companyEmail) { const el = document.getElementById("footerEmail"); if(el) el.textContent = body.companyEmail; }
