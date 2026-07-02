@@ -24,6 +24,12 @@ const pool = new Pool({
   ssl: isLocalDB ? false : { rejectUnauthorized: false },
 });
 
+// ─── Cache paramètres (5 min) ─────────────────────────────────────────────────
+let _settingsCache = null;
+let _settingsCacheTime = 0;
+const SETTINGS_CACHE_TTL = 300000;
+function clearSettingsCache() { _settingsCache = null; _settingsCacheTime = 0; }
+
 // ─── Création des tables au démarrage ───────────────────────────────────────
 async function initDB() {
   await pool.query(`
@@ -113,6 +119,13 @@ async function initDB() {
     );
 
     ALTER TABLE products ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';
+
+    CREATE INDEX IF NOT EXISTS idx_products_category  ON products(category);
+    CREATE INDEX IF NOT EXISTS idx_products_city       ON products(city);
+    CREATE INDEX IF NOT EXISTS idx_products_owner      ON products(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_products_approved   ON products(approved, blocked);
+    CREATE INDEX IF NOT EXISTS idx_products_created    ON products(created_at DESC);
 
     CREATE TABLE IF NOT EXISTS pharmacies_garde (
       city    TEXT PRIMARY KEY,
@@ -157,6 +170,7 @@ function rowToProduct(r) {
     id: Number(r.id),
     title: r.title,
     category: r.category,
+    city: r.city || "",
     price: Number(r.price),
     oldPrice: r.old_price ? Number(r.old_price) : null,
     stock: r.stock,
@@ -197,10 +211,11 @@ function rowToOrder(r) {
 }
 
 async function getSettings() {
+  if (_settingsCache && Date.now() - _settingsCacheTime < SETTINGS_CACHE_TTL) return _settingsCache;
   const { rows } = await pool.query("SELECT * FROM settings WHERE id=1");
   const s = rows[0] || {};
   const defaultSms = { enabled: false, method: "POST", url: "", contentType: "application/json", headers: "", bodyTemplate: "", sender: "ABGMARKET", apiKey: "" };
-  return {
+  _settingsCache = {
     companyName: s.company_name || "ABENGOUROU-MARKET.CI",
     companyPhone: s.company_phone || "+225 0767202271",
     companyEmail: s.company_email || "contact@abengourou-market.com",
@@ -214,6 +229,8 @@ async function getSettings() {
     ikoddiGroupId: s.ikoddi_group_id || "",
     ikoddiEnabled: s.ikoddi_enabled !== false,
   };
+  _settingsCacheTime = Date.now();
+  return _settingsCache;
 }
 
 async function productVisible(p) {
@@ -285,6 +302,7 @@ app.get("/api/settings", async (_req, res) => {
 
 app.post("/api/settings", async (req, res) => {
   try {
+    clearSettingsCache();
     const cur = await getSettings();
     const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig, cabinePaymentLink, ikoddiApiKey, ikoddiGroupId, ikoddiEnabled } = req.body || {};
     const newName      = companyName      !== undefined ? companyName      : cur.companyName;
@@ -382,15 +400,39 @@ app.post("/api/vendors/delete", async (req, res) => {
 });
 
 // ─── Products ─────────────────────────────────────────────────────────────────
-app.get("/api/products", async (_req, res) => {
+app.get("/api/products", async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT * FROM products ORDER BY created_at DESC");
-    const products = rows.map(rowToProduct);
-    const visible = [];
-    for (const p of products) {
-      if (await productVisible(p)) visible.push(p);
+    const category = (req.query.category || "").trim();
+    const city     = (req.query.city     || "").trim();
+    const page     = parseInt(req.query.page)  || 0;
+    const limit    = Math.min(parseInt(req.query.limit) || 30, 100);
+
+    const conditions = [
+      "p.approved = true",
+      "p.blocked = false",
+      "(p.expires_at IS NULL OR p.expires_at > NOW())",
+      "(p.owner_role = 'admin' OR u.approved = true)",
+    ];
+    const params = [];
+
+    if (category) { params.push(category); conditions.push(`p.category = $${params.length}`); }
+    if (city)     { params.push(city);     conditions.push(`p.city = $${params.length}`); }
+
+    const where = conditions.join(" AND ");
+    const base  = `FROM products p LEFT JOIN users u ON p.owner_id = u.id WHERE ${where}`;
+
+    if (page > 0) {
+      const offset = (page - 1) * limit;
+      const [countRes, dataRes] = await Promise.all([
+        pool.query(`SELECT COUNT(*) ${base}`, params),
+        pool.query(`SELECT p.* ${base} ORDER BY p.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, limit, offset]),
+      ]);
+      const total = parseInt(countRes.rows[0].count);
+      res.json({ products: dataRes.rows.map(rowToProduct), total, page, pages: Math.ceil(total / limit) });
+    } else {
+      const { rows } = await pool.query(`SELECT p.* ${base} ORDER BY p.created_at DESC`, params);
+      res.json(rows.map(rowToProduct));
     }
-    res.json(visible);
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -426,12 +468,12 @@ app.post("/api/products", async (req, res) => {
 
     await pool.query(
       `INSERT INTO products
-        (id,title,category,price,old_price,stock,stock_init,image,description,
+        (id,title,category,city,price,old_price,stock,stock_init,image,description,
          whatsapp,personal_phone,owner_id,owner_name,owner_role,approved,blocked,
          employer,job_location,contract_type,salary,deadline,expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,$16,$17,$18,$19,$20,$21)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,$17,$18,$19,$20,$21,$22)`,
       [
-        id, b.title, b.category, Number(b.price)||0,
+        id, b.title, b.category, b.city||"Abengourou", Number(b.price)||0,
         b.oldPrice ? Number(b.oldPrice) : null,
         stock, stock, b.image||null, b.description||"",
         b.whatsapp||"", b.personalPhone||"",
@@ -476,7 +518,7 @@ app.post("/api/products/update", async (req, res) => {
     const expireHours = b.expireHours !== undefined ? Number(b.expireHours) : undefined;
     let expiresAtClause = "";
     const params = [
-      b.title||"", b.category||"", Number(b.price)||0,
+      b.title||"", b.category||"", b.city||"", Number(b.price)||0,
       b.oldPrice ? Number(b.oldPrice) : null,
       Number(b.stock)||0,
       b.description||"", b.whatsapp||"", b.personalPhone||"",
@@ -486,14 +528,14 @@ app.post("/api/products/update", async (req, res) => {
     if (expireHours !== undefined) {
       const expiresAt = expireHours > 0 ? new Date(Date.now() + expireHours * 3600000).toISOString() : null;
       params.splice(params.length - 1, 0, expiresAt);
-      expiresAtClause = ", expires_at=$14";
+      expiresAtClause = ", expires_at=$15";
     }
     const idPos = params.length;
     await pool.query(
       `UPDATE products SET
-        title=$1, category=$2, price=$3, old_price=$4, stock=$5,
-        description=$6, whatsapp=$7, personal_phone=$8,
-        employer=$9, job_location=$10, contract_type=$11, salary=$12, deadline=$13
+        title=$1, category=$2, city=$3, price=$4, old_price=$5, stock=$6,
+        description=$7, whatsapp=$8, personal_phone=$9,
+        employer=$10, job_location=$11, contract_type=$12, salary=$13, deadline=$14
         ${expiresAtClause}
        WHERE id=$${idPos}`,
       params
@@ -920,18 +962,18 @@ app.post("/api/admin/import/excel", upload.single("file"), async (req, res) => {
         const imgVal = typeof p.image === "string" && p.image.startsWith("[IMAGE") ? null : (p.image || null);
         await pool.query(`
           INSERT INTO products
-            (id,title,description,price,old_price,category,image,stock,stock_init,
+            (id,title,description,price,old_price,category,city,image,stock,stock_init,
              owner_id,owner_name,owner_role,whatsapp,personal_phone,approved,blocked,
              employer,job_location,contract_type,salary,deadline,created_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
           ON CONFLICT (id) DO UPDATE SET
             title=EXCLUDED.title, description=EXCLUDED.description, price=EXCLUDED.price,
-            old_price=EXCLUDED.old_price, category=EXCLUDED.category,
+            old_price=EXCLUDED.old_price, category=EXCLUDED.category, city=EXCLUDED.city,
             stock=EXCLUDED.stock, approved=EXCLUDED.approved, blocked=EXCLUDED.blocked
         `, [
           p.id, p.title||"", p.description||"",
           Number(p.price)||0, p.old_price ? Number(p.old_price) : null,
-          p.category||"", imgVal,
+          p.category||"", p.city||"", imgVal,
           Number(p.stock)||0, Number(p.stock_init||p.stock)||0,
           p.owner_id||"", p.owner_name||"", p.owner_role||"vendeur",
           p.whatsapp||"", p.personal_phone||"",
