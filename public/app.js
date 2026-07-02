@@ -160,7 +160,37 @@ function catMode(cat) {
   return "order"; // marchandises, transport, braderie, restaurants…
 }
 
-async function filterCat(cat) {
+// ============ PAGINATION ============
+function renderPagination(page, pages, total, cat, cityFilter) {
+  if (!pages || pages <= 1) return "";
+  const cf = cityFilter || "";
+  const btn = (p, label, active = false) =>
+    `<button onclick="filterCat('${cat}',${p},'${cf}')" style="padding:7px 13px;border:1.5px solid var(--primary);border-radius:20px;background:${active ? "var(--primary)" : "#fff"};color:${active ? "#fff" : "var(--primary)"};font-size:13px;font-weight:600;cursor:pointer;transition:all .15s">${label}</button>`;
+
+  let html = "";
+  if (page > 1) html += btn(page - 1, "← Précédent");
+
+  const start = Math.max(1, page - 2);
+  const end   = Math.min(pages, page + 2);
+
+  if (start > 1) html += btn(1, "1");
+  if (start > 2) html += `<span style="padding:7px 4px;color:var(--muted)">…</span>`;
+
+  for (let i = start; i <= end; i++) html += btn(i, String(i), i === page);
+
+  if (end < pages - 1) html += `<span style="padding:7px 4px;color:var(--muted)">…</span>`;
+  if (end < pages)     html += btn(pages, String(pages));
+
+  if (page < pages) html += btn(page + 1, "Suivant →");
+
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+      ${html}
+    </div>
+    <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:8px">Page ${page} sur ${pages} · ${total} annonce${total > 1 ? "s" : ""}</div>`;
+}
+
+async function filterCat(cat, page = 1, cityFilter = SELECTED_CITY) {
   document.getElementById("mobileSidebar").classList.remove("show");
   if (cat === "cabine-en-ligne") return showCabineEnLignePage();
   if (cat === "rencontres") return showRencontresPage();
@@ -174,62 +204,74 @@ async function filterCat(cat) {
 
   showPage("page-category");
 
+  const cf = cityFilter || "";
+  const citySelectHtml = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;padding:10px 14px;background:#f8f9fa;border-radius:var(--radius);border:1px solid var(--border)">
+      <span style="font-size:13px;font-weight:600;color:var(--muted)">📍 Filtrer par ville :</span>
+      <select onchange="filterCat('${cat}',1,this.value)" style="padding:6px 12px;border:2px solid var(--primary);border-radius:20px;font-size:13px;cursor:pointer;outline:none;background:#fff">
+        <option value="" ${cf === "" ? "selected" : ""}>Toutes les villes</option>
+        ${CI_CITIES.map(c => `<option value="${c}" ${cf === c ? "selected" : ""}>${c}</option>`).join("")}
+      </select>
+      ${cf ? `<span style="font-size:12px;background:var(--primary);color:#fff;border-radius:20px;padding:4px 10px;font-weight:600">📍 ${cf} <span onclick="filterCat('${cat}',1,'')" style="cursor:pointer;margin-left:4px">✕</span></span>` : ""}
+    </div>`;
+
   const wrap = document.getElementById("catPageContent");
   wrap.innerHTML = `
     <div class="cat-page-header">
       <span class="cat-page-icon">${icon}</span>
       <div>
         <h2>${label}</h2>
-        <p>${mode === "info" ? "Informations officielles · Abengourou et Côte d'Ivoire" : "Toutes les annonces · Abengourou et Côte d'Ivoire"}</p>
+        <p>${mode === "info" ? "Informations officielles · Côte d'Ivoire" : "Toutes les annonces · Côte d'Ivoire"}</p>
       </div>
     </div>
+    ${citySelectHtml}
     <div class="section-block">
       <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
     </div>`;
 
-  let all = [];
-  try { all = await (await fetch("/api/products")).json(); } catch {}
-  const products = all.filter(p => p.category === slug);
+  let data = { products: [], total: 0, page: 1, pages: 1 };
+  try {
+    const params = new URLSearchParams({ category: slug, page, limit: 30 });
+    if (cf) params.set("city", cf);
+    data = await (await fetch(`/api/products?${params}`)).json();
+  } catch {}
+
+  const products = Array.isArray(data) ? data : (data.products || []);
+  const total    = data.total  || products.length;
+  const curPage  = data.page   || 1;
+  const pages    = data.pages  || 1;
 
   if (!products.length) {
     wrap.querySelector(".section-block").innerHTML = `
       <div class="empty-state">
         <div class="empty-ico">${icon}</div>
-        <p>Aucune annonce dans cette catégorie pour le moment.</p>
+        <p>Aucune annonce${cf ? ` à <strong>${cf}</strong>` : ""} dans cette catégorie pour le moment.</p>
         <p style="font-size:13px;color:var(--muted);margin-top:6px">0 résultat — revenez bientôt !</p>
       </div>`;
     return;
   }
 
-  // Vérifier si la catégorie est payante
-  const catCfg = CAT_CONFIG[slug] || { access: "free", price: 0 };
+  const catCfg   = CAT_CONFIG[slug] || { access: "free", price: 0 };
   const isCatPaid = catCfg.access === "paid" && Number(catCfg.price) > 0;
-
-  let cardsHtml = "";
-  let gridClass = "products-grid";
+  let cardsHtml = "", gridClass = "products-grid";
 
   if (isCatPaid) {
-    gridClass = "products-grid";
     cardsHtml = products.map(p => lockedCard(p, Number(catCfg.price), slug)).join("");
   } else if (mode === "info") {
     gridClass = "info-cards-grid";
     cardsHtml = products.map(p => infoCard(p)).join("");
   } else if (mode === "whatsapp") {
-    gridClass = "products-grid";
     cardsHtml = products.map(p => waOnlyCard(p)).join("");
   } else if (mode === "reserve") {
-    gridClass = "products-grid";
     cardsHtml = products.map(p => reserveCard(p)).join("");
   } else {
-    gridClass = "products-grid";
-    cardsHtml = products.map(p => productCard({...p, name:p.title})).join("");
+    cardsHtml = products.map(p => productCard({...p, name: p.title})).join("");
   }
 
   wrap.querySelector(".section-block").innerHTML = `
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${products.length} annonce${products.length>1?"s":""} disponible${products.length>1?"s":""}</div>
-    <div class="${gridClass}">
-      ${cardsHtml}
-    </div>`;
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${total} annonce${total > 1 ? "s" : ""} disponible${total > 1 ? "s" : ""}</div>
+    <div class="${gridClass}">${cardsHtml}</div>
+    ${renderPagination(curPage, pages, total, cat, cf)}`;
 }
 
 // ============ CAT NAV ============
@@ -1009,6 +1051,7 @@ function renderHome() {
     return `<a href="#" class="shortcut" onclick="filterCat('${cat}');return false;"><span class="ico">${icoHtml}</span><span>${n}</span></a>`;
   }).join("");
 
+  renderCityBanner();
   switchPage2Tab("concours", document.querySelector(".page2-tab.active"));
 
   loadFlashSection();
@@ -1023,6 +1066,10 @@ function renderHome() {
 function showHome() {
   _page2All = null;
   showPage("page-home");
+  renderCityBanner();
+  if (!SELECTED_CITY) {
+    setTimeout(() => showCityModal(), 400);
+  }
   switchPage2Tab("concours", document.querySelector(".page2-tab.active"));
   loadShop();
 }
@@ -1033,8 +1080,8 @@ async function loadFlashSection() {
   if (!el) return;
   let products = [];
   try {
-    const all = await (await fetch("/api/products")).json();
-    products = all.filter(p => p.oldPrice && Number(p.oldPrice) > Number(p.price) && !PAID_CATS.has(p.category));
+    const all = await (await fetch("/api/products" + getCityParam())).json();
+    products = (Array.isArray(all) ? all : (all.products||[])).filter(p => p.oldPrice && Number(p.oldPrice) > Number(p.price) && !PAID_CATS.has(p.category));
   } catch {}
   if (!products.length) {
     el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-ico">⚡</div><p>Aucune offre flash pour le moment.</p></div>`;
@@ -1049,8 +1096,8 @@ async function loadCatSection(gridId, category, icon, emptyMsg, gridClass) {
   if (!el) return;
   let products = [];
   try {
-    const all = await (await fetch("/api/products")).json();
-    products = all.filter(p => p.category === category);
+    const all = await (await fetch("/api/products" + getCityParam())).json();
+    products = (Array.isArray(all) ? all : (all.products||[])).filter(p => p.category === category);
   } catch {}
   if (!products.length) {
     el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-ico">${icon}</div><p>${emptyMsg}</p></div>`;
@@ -1066,8 +1113,8 @@ async function loadTransportSection() {
   if (!el) return;
   let products = [];
   try {
-    const all = await (await fetch("/api/products")).json();
-    products = all.filter(p => p.category === "transport");
+    const all = await (await fetch("/api/products" + getCityParam())).json();
+    products = (Array.isArray(all) ? all : (all.products||[])).filter(p => p.category === "transport");
   } catch {}
   if (!products.length) {
     el.innerHTML = `<div class="empty-state"><div class="empty-ico">🚕</div><p>Aucune offre de transport pour le moment.</p></div>`;
@@ -1097,7 +1144,7 @@ async function loadNewsSection() {
   let products = [];
   try {
     const all = await (await fetch("/api/products")).json();
-    products = all.filter(p => p.category === "actualites");
+    products = (Array.isArray(all) ? all : (all.products||[])).filter(p => p.category === "actualites");
   } catch {}
   if (!products.length) {
     el.innerHTML = `<li style="list-style:none;padding:20px;text-align:center;color:var(--muted)">📰 Aucune actualité pour le moment.</li>`;
@@ -1110,48 +1157,119 @@ async function loadNewsSection() {
     </li>`).join("");
 }
 
-// ============ LOAD SHOP (API) — vue par catégories ============
+// ============ LOAD SHOP (API) — vue progressive par quartiles + ville ============
 const SHOP_EXCLUDED = new Set(["rencontres","sante","scolaires","pronostics","transport","immobilier","restaurants","actualites","concours-ci","emploi","recrutement","cabine-en-ligne"]);
 
+let _shopAll  = null; // cache produits filtrés par ville
+let _shopStep = 0;   // 0=vue initiale 1/cat  |  1=Q1  2=Q2  3=Q3  4=tout
+
 async function loadShop() {
+  _shopAll  = null;
+  _shopStep = 0;
   const grid = document.getElementById("shopGrid");
   if (!grid) return;
-  let products = [];
-  try { products = await (await fetch("/api/products")).json(); } catch {}
+  grid.style.display = "block";
+  grid.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>`;
+  try {
+    const raw = await (await fetch("/api/products" + getCityParam())).json();
+    const all = Array.isArray(raw) ? raw : (raw.products || []);
+    _shopAll = all.filter(p => !SHOP_EXCLUDED.has(p.category) && !PAID_CATS.has(p.category));
+  } catch { _shopAll = []; }
+  renderShop();
+}
 
-  const shopItems = products.filter(p => !SHOP_EXCLUDED.has(p.category) && !PAID_CATS.has(p.category));
-  if (!shopItems.length) {
-    grid.style.display = "block";
-    grid.innerHTML = `<div class="empty-state"><div class="empty-ico">🛍️</div><p>Aucun article en ligne pour le moment.</p></div>`;
+function renderShop() {
+  const grid = document.getElementById("shopGrid");
+  if (!grid) return;
+  const products = _shopAll || [];
+  const total    = products.length;
+  const city     = SELECTED_CITY || "";
+  const cityTag  = city ? `📍 ${city}` : "🌍 Côte d'Ivoire";
+
+  // ── Vide ──────────────────────────────────────────────────────────────
+  if (!total) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-ico">🛍️</div>
+        <p>Aucun article${city ? ` à <strong>${city}</strong>` : ""} pour le moment.</p>
+        ${city ? `<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="setCity('')">Voir toutes les villes</button>` : ""}
+      </div>`;
     return;
   }
 
-  // Grouper par catégorie
-  const byCat = {};
-  for (const p of shopItems) {
-    if (!byCat[p.category]) byCat[p.category] = [];
-    byCat[p.category].push(p);
+  const quarter = Math.ceil(total / 4);
+
+  // ── Étape 0 : 1 article par catégorie ─────────────────────────────────
+  if (_shopStep === 0) {
+    const byCat = {};
+    for (const p of products) {
+      if (!byCat[p.category]) byCat[p.category] = [];
+      byCat[p.category].push(p);
+    }
+    const catCount = Object.keys(byCat).length;
+    const q1count  = Math.min(quarter, total);
+
+    const blocks = Object.entries(byCat).map(([slug, items]) => {
+      const [, icon, label] = CATEGORIES.find(c => c[0] === slug) || [slug, "🛍️", slug];
+      return `<div class="shop-cat-block">
+        <div class="shop-cat-header">
+          <span class="shop-cat-icon">${icon}</span>
+          <div>
+            <h3>${label}</h3>
+            <small style="color:var(--muted)">${items.length} article${items.length > 1 ? "s" : ""} · ${cityTag}</small>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}','1','${city}')">Voir tout →</button>
+        </div>
+        <div class="products-grid shop-cat-grid">${productCard({...items[0], name: items[0].title}, false)}</div>
+      </div>`;
+    }).join("");
+
+    grid.innerHTML = `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        ${cityTag} · <strong>${catCount}</strong> catégorie${catCount > 1 ? "s" : ""} · <strong>${total}</strong> article${total > 1 ? "s" : ""} disponible${total > 1 ? "s" : ""}
+      </div>
+      ${blocks}
+      <div style="text-align:center;margin-top:24px;padding-bottom:4px">
+        <button onclick="_shopStep=1;renderShop()" style="padding:13px 36px;border-radius:30px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(230,81,0,.35);transition:transform .1s" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+          🔽 Voir plus — ${q1count} article${q1count > 1 ? "s" : ""} <span style="opacity:.75;font-size:12px">(1/4)</span>
+        </button>
+      </div>`;
+    return;
   }
 
-  grid.style.display = "block";
-  grid.innerHTML = Object.entries(byCat).map(([slug, items]) => {
-    const catInfo = CATEGORIES.find(c => c[0] === slug) || [slug, "🛍️", slug];
-    const [, icon, label] = catInfo;
-    const previewCards = items.slice(0, 4).map(p => productCard({...p, name: p.title}, false)).join("");
-    const moreCount = items.length > 4 ? items.length - 4 : 0;
-    return `<div class="shop-cat-block" id="shopblock-${slug}">
-      <div class="shop-cat-header">
-        <span class="shop-cat-icon">${icon}</span>
-        <div>
-          <h3>${label}</h3>
-          <small style="color:var(--muted)">${items.length} article${items.length>1?"s":""}</small>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}')">Voir tout →</button>
+  // ── Étapes 1-4 : quartiles ─────────────────────────────────────────────
+  const shown   = Math.min(_shopStep * quarter, total);
+  const visible = products.slice(0, shown);
+  const isDone  = shown >= total;
+
+  let moreBtn = "";
+  if (!isDone) {
+    const nextStep  = _shopStep + 1;
+    const nextShown = Math.min(nextStep * quarter, total);
+    const qLabel    = `${nextStep}/4`;
+    moreBtn = `
+      <div style="text-align:center;margin-top:24px">
+        <button onclick="_shopStep++;renderShop()" style="padding:13px 36px;border-radius:30px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(230,81,0,.35);transition:transform .1s" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+          🔽 Voir plus — ${nextShown} article${nextShown > 1 ? "s" : ""} <span style="opacity:.75;font-size:12px">(${qLabel})</span>
+        </button>
+      </div>`;
+  } else {
+    moreBtn = `
+      <div style="text-align:center;margin-top:18px;padding:12px 16px;background:#f1f8e9;border-radius:12px;font-size:13px;color:#388e3c;font-weight:600">
+        ✅ Tous les <strong>${total}</strong> articles affichés · ${cityTag}
+      </div>`;
+  }
+
+  grid.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-size:13px;color:var(--muted)">${cityTag} · <strong>${shown}</strong> / ${total} article${total > 1 ? "s" : ""}</span>
+      <div style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="_shopStep=0;renderShop()" style="font-size:12px">← Vue catégories</button>
+        ${city ? `<button class="btn btn-ghost btn-sm" onclick="setCity('')" style="font-size:12px">🌍 Toutes villes</button>` : ""}
       </div>
-      <div class="products-grid shop-cat-grid">${previewCards}</div>
-      ${moreCount > 0 ? `<div style="text-align:center;margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}')">+ ${moreCount} autre${moreCount>1?"s":""} article${moreCount>1?"s":""}</button></div>` : ""}
-    </div>`;
-  }).join("");
+    </div>
+    <div class="products-grid">${visible.map(p => productCard({...p, name: p.title})).join("")}</div>
+    ${moreBtn}`;
 }
 
 // ============ SECTION SERVICES ============
@@ -1160,7 +1278,10 @@ async function loadServicesSection() {
   if (!grid) return;
   const SERVICE_CATS = ["services","evenements"];
   let all = [];
-  try { all = await (await fetch("/api/products")).json(); } catch {}
+  try {
+    const raw = await (await fetch("/api/products" + getCityParam())).json();
+    all = Array.isArray(raw) ? raw : (raw.products || []);
+  } catch {}
   const items = all.filter(p => SERVICE_CATS.includes(p.category));
   if (!items.length) {
     grid.style.display = "block";
@@ -1409,8 +1530,63 @@ const CI_CITIES = [
   "Korhogo","Man","Gagnoa","Divo","Aboisso","Bondoukou","Dimbokro",
   "Agboville","Adzopé","Bingerville","Grand-Bassam","Sassandra",
   "Soubré","Sinfra","Séguéla","Odienné","Ferkessédougou","Lakota",
-  "Issia","Touba","Vavoua","Katiola","Daoukro","Tiassalé"
+  "Issia","Touba","Vavoua","Katiola","Daoukro","Tiassalé",
+  "Anyama","Abobo","Yopougon","Cocody","Plateau","Marcory","Treichville",
+  "Grand-Lahou","Jacqueville","Dabou","Guitry","Sikensi","Taabo"
 ];
+
+// ============ VILLE SÉLECTIONNÉE (accueil) ============
+let SELECTED_CITY = localStorage.getItem("abg_city") || "";
+
+function getCityParam() {
+  return SELECTED_CITY ? `?city=${encodeURIComponent(SELECTED_CITY)}` : "";
+}
+
+function setCity(c) {
+  SELECTED_CITY = c;
+  if (c) localStorage.setItem("abg_city", c);
+  else localStorage.removeItem("abg_city");
+  closeModal();
+  renderCityBanner();
+  renderHome();
+}
+
+function renderCityBanner() {
+  const el = document.getElementById("cityBanner");
+  if (!el) return;
+  const cityOpts = CI_CITIES.map(c =>
+    `<option value="${c}" ${SELECTED_CITY === c ? "selected" : ""}>${c}</option>`
+  ).join("");
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;margin:10px 0;background:linear-gradient(135deg,#e65100,#f57c00);border-radius:12px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15)">
+      <span style="font-size:18px">📍</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;opacity:.85;font-weight:500">Vous consultez les annonces de :</div>
+        <div style="font-weight:700;font-size:15px">${SELECTED_CITY || "Toutes les villes"}</div>
+      </div>
+      <select onchange="setCity(this.value)" style="padding:7px 12px;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;outline:none;background:#fff;color:#e65100;min-width:160px">
+        <option value="">🌍 Toutes les villes</option>
+        ${cityOpts}
+      </select>
+    </div>`;
+}
+
+function showCityModal() {
+  const cityOpts = CI_CITIES.map(c =>
+    `<button onclick="setCity('${c}')" style="padding:10px 16px;border:2px solid ${SELECTED_CITY===c?"var(--primary)":"#e0e0e0"};background:${SELECTED_CITY===c?"var(--primary)":"#fff"};color:${SELECTED_CITY===c?"#fff":"#333"};border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-align:left">
+      📍 ${c}
+    </button>`
+  ).join("");
+  openModal(`
+    <div style="padding:4px 0">
+      <h3 style="margin:0 0 6px;color:var(--primary);font-size:18px">📍 Choisissez votre ville</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px">Sélectionnez votre ville pour voir les annonces près de chez vous.</p>
+      <button onclick="setCity('')" style="width:100%;padding:12px;border:2px dashed #ccc;background:#f9f9f9;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;color:#555">🌍 Voir toutes les villes de Côte d'Ivoire</button>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;max-height:340px;overflow-y:auto;padding-right:4px">
+        ${cityOpts}
+      </div>
+    </div>`);
+}
 
 async function showSantePage() {
   showPage("page-category");
@@ -1773,8 +1949,8 @@ function onPronoTypeChange(sel) {
   if (matchFields) matchFields.style.display = sel.value === "Les matchs" ? "" : "none";
 }
 
-// ============ IMAGE COMPRESSION ============
-async function compressImage(file, maxW = 900, quality = 0.78) {
+// ============ IMAGE COMPRESSION (WebP) ============
+async function compressImage(file, maxW = 900, quality = 0.80) {
   return new Promise(resolve => {
     const reader = new FileReader();
     reader.onload = ev => {
@@ -1785,7 +1961,8 @@ async function compressImage(file, maxW = 900, quality = 0.78) {
         const canvas = document.createElement("canvas");
         canvas.width = w; canvas.height = h;
         canvas.getContext("2d").drawImage(image, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        const webp = canvas.toDataURL("image/webp", quality);
+        resolve(webp !== "data:," ? webp : canvas.toDataURL("image/jpeg", quality));
       };
       image.src = ev.target.result;
     };
@@ -1871,6 +2048,7 @@ document.addEventListener("submit", async e => {
   const body = {
     ownerId: USER.id, ownerName: USER.name, ownerRole: USER.role,
     title: f.title.value, category: cat,
+    city: f.city ? f.city.value : "",
     price, oldPrice, stock, whatsapp, personalPhone,
     image: img, description: desc,
     employer, jobLocation, contractType, salary, deadline,
@@ -1924,10 +2102,21 @@ function showAdmin() {
 
 function productFormFields() {
   const cats = CATEGORIES.map(([s, _, n]) => `<option value="${s}">${n}</option>`).join("");
+  const cityOptions = CI_CITIES.map(c => `<option value="${c}">${c}</option>`).join("");
   return `
     <div class="form-row">
       <div class="form-group"><label>Titre</label><input name="title" required placeholder="Ex: iPhone 14 Pro  /  Comptable Sénior" /></div>
       <div class="form-group"><label>Catégorie</label><select name="category" required onchange="switchFormForCat(this)">${cats}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>📍 Ville</label>
+        <select name="city">
+          <option value="">— Sélectionner une ville —</option>
+          ${cityOptions}
+        </select>
+        <div class="form-hint">Ville où se trouve le produit ou service.</div>
+      </div>
     </div>
 
     <!-- SECTION : Article standard -->
