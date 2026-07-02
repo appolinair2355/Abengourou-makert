@@ -6,6 +6,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const XLSX = require("xlsx");
 const multer = require("multer");
+const { Ikoddi } = require("ikoddi-client-sdk");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -87,6 +88,10 @@ async function initDB() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_website TEXT DEFAULT '';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_whatsapp TEXT DEFAULT '2250767202271';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS category_config JSONB DEFAULT '{}';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS cabine_payment_link TEXT DEFAULT 'https://pay.wave.com/m/M_ci_CRgdcq5dsx3B/c/ci/';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_api_key TEXT DEFAULT 'cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_group_id TEXT DEFAULT '';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_enabled BOOLEAN DEFAULT TRUE;
 
     CREATE TABLE IF NOT EXISTS rencontres (
       id               BIGINT PRIMARY KEY,
@@ -204,6 +209,10 @@ async function getSettings() {
     subscriptionPrice: Number(s.subscription_price) || 5000,
     sms: { ...defaultSms, ...(s.sms_config || {}) },
     categoryConfig: s.category_config || {},
+    cabinePaymentLink: s.cabine_payment_link || "https://pay.wave.com/m/M_ci_CRgdcq5dsx3B/c/ci/",
+    ikoddiApiKey: s.ikoddi_api_key || "cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9",
+    ikoddiGroupId: s.ikoddi_group_id || "",
+    ikoddiEnabled: s.ikoddi_enabled !== false,
   };
 }
 
@@ -217,17 +226,17 @@ async function productVisible(p) {
 
 // ─── SMS sender ──────────────────────────────────────────────────────────────
 async function sendSMS(settings, to, message) {
-  const sms = settings.sms || {};
-  if (!sms.enabled || !sms.url || !to) return { ok: false, skipped: true };
-  const from = sms.sender || settings.companyName || "ABGMARKET";
-  const fill = (s) => String(s || "").replaceAll("{to}", to).replaceAll("{message}", message).replaceAll("{from}", from);
-  const headers = { "Content-Type": "application/json" };
-  if (sms.apiKey) headers["Authorization"] = `Bearer ${sms.apiKey}`;
-  const body = JSON.stringify({ to, from, text: message });
+  if (!settings.ikoddiEnabled) return { ok: false, skipped: true };
+  const apiKey = settings.ikoddiApiKey || "cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9";
+  const groupId = settings.ikoddiGroupId || "";
+  if (!groupId || !to) return { ok: false, skipped: !to ? true : false, reason: !groupId ? "ikoddi_group_id_missing" : "no_phone" };
+  const phone = String(to).replace(/\D/g, "");
+  if (!phone) return { ok: false, skipped: true };
+  const from = settings.companyName ? settings.companyName.slice(0, 11) : "ABGMARKET";
   try {
-    const r = await fetch(fill(sms.url), { method: "POST", headers, body });
-    const text = await r.text().catch(() => "");
-    return { ok: r.ok, status: r.status, body: text.slice(0, 300) };
+    const client = new Ikoddi().withApiKey(apiKey).withGroupId(groupId);
+    const result = await client.sendSMS([phone], from, message, false, "225", "CI");
+    return { ok: true, data: result };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -277,7 +286,7 @@ app.get("/api/settings", async (_req, res) => {
 app.post("/api/settings", async (req, res) => {
   try {
     const cur = await getSettings();
-    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig } = req.body || {};
+    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig, cabinePaymentLink, ikoddiApiKey, ikoddiGroupId, ikoddiEnabled } = req.body || {};
     const newName      = companyName      !== undefined ? companyName      : cur.companyName;
     const newPhone     = companyPhone     !== undefined ? companyPhone     : cur.companyPhone;
     const newEmail     = companyEmail     !== undefined ? companyEmail     : cur.companyEmail;
@@ -286,11 +295,17 @@ app.post("/api/settings", async (req, res) => {
     const newPrice     = subscriptionPrice !== undefined ? Number(subscriptionPrice) : cur.subscriptionPrice;
     const newSms       = sms ? { ...cur.sms, ...sms } : cur.sms;
     const newCatCfg    = categoryConfig !== undefined ? categoryConfig : cur.categoryConfig;
+    const newCabineLink = cabinePaymentLink !== undefined ? cabinePaymentLink : cur.cabinePaymentLink;
+    const newIkoddiKey  = ikoddiApiKey  !== undefined ? ikoddiApiKey  : cur.ikoddiApiKey;
+    const newIkoddiGrp  = ikoddiGroupId !== undefined ? ikoddiGroupId : cur.ikoddiGroupId;
+    const newIkoddiOn   = ikoddiEnabled !== undefined ? Boolean(ikoddiEnabled) : cur.ikoddiEnabled;
     await pool.query(
       `UPDATE settings SET company_name=$1, subscription_price=$2, sms_config=$3,
        company_phone=$4, company_email=$5, company_website=$6, company_whatsapp=$7,
-       category_config=$8 WHERE id=1`,
-      [newName, newPrice, JSON.stringify(newSms), newPhone, newEmail, newWebsite, newWhatsapp, JSON.stringify(newCatCfg)]
+       category_config=$8, cabine_payment_link=$9,
+       ikoddi_api_key=$10, ikoddi_group_id=$11, ikoddi_enabled=$12 WHERE id=1`,
+      [newName, newPrice, JSON.stringify(newSms), newPhone, newEmail, newWebsite, newWhatsapp,
+       JSON.stringify(newCatCfg), newCabineLink, newIkoddiKey, newIkoddiGrp, newIkoddiOn]
     );
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: String(e) }); }
@@ -299,8 +314,21 @@ app.post("/api/settings", async (req, res) => {
 app.post("/api/settings/sms-test", async (req, res) => {
   try {
     const settings = await getSettings();
-    const r = await sendSMS(settings, req.body.to, `${settings.companyName}: SMS de test ✓`);
+    const r = await sendSMS(settings, req.body.to, `${settings.companyName}: SMS de test IKODDI ✓`);
     res.json(r);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// ─── Notification vendeur (clic WhatsApp direct) ──────────────────────────────
+app.post("/api/notify-vendor", async (req, res) => {
+  try {
+    const { vendorPhone, productName } = req.body || {};
+    if (!vendorPhone) return res.json({ ok: false, skipped: true });
+    const settings = await getSettings();
+    const phone = String(vendorPhone).replace(/\D/g, "");
+    const msg = `${settings.companyName}\n🔔 Nouveau contact !\nArticle : ${productName || "Non spécifié"}\nUn client est intéressé et vous contacte maintenant via WhatsApp.`;
+    const result = await sendSMS(settings, phone, msg);
+    res.json(result);
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -1102,5 +1130,5 @@ app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.h
 
 // ─── Démarrage ────────────────────────────────────────────────────────────────
 initDB()
-  .then(() => app.listen(PORT, () => console.log(`ABENGOUROU-MARKET sur http://localhost:${PORT}`)))
+  .then(() => app.listen(PORT, "0.0.0.0", () => console.log(`ABENGOUROU-MARKET sur http://0.0.0.0:${PORT}`)))
   .catch((err) => { console.error("❌ Erreur DB:", err.message); process.exit(1); });
