@@ -1130,19 +1130,44 @@ function showHome() {
 }
 
 // Offres flash = produits avec remise publiés (oldPrice > price)
+let _flashAll  = [];
+let _flashShown = 4;
+
 async function loadFlashSection() {
+  _flashAll  = [];
+  _flashShown = 4;
   const el = document.getElementById("flashGrid");
   if (!el) return;
-  let products = [];
   try {
     const all = await (await fetch("/api/products" + getCityParam())).json();
-    products = (Array.isArray(all) ? all : (all.products||[])).filter(p => p.oldPrice && Number(p.oldPrice) > Number(p.price) && !PAID_CATS.has(p.category));
+    _flashAll = (Array.isArray(all) ? all : (all.products||[])).filter(p => p.oldPrice && Number(p.oldPrice) > Number(p.price) && !PAID_CATS.has(p.category));
   } catch {}
+  renderFlashSection();
+}
+
+function renderFlashSection() {
+  const el = document.getElementById("flashGrid");
+  if (!el) return;
+  const products = _flashAll;
   if (!products.length) {
     el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-ico">⚡</div><p>Aucune offre flash pour le moment.</p></div>`;
     return;
   }
-  el.innerHTML = products.map(p => productCard({...p, name:p.title}, true)).join("");
+  // Quand toutes les villes : affichage progressif +4
+  if (!SELECTED_CITY) {
+    const visible = products.slice(0, _flashShown);
+    const isDone  = _flashShown >= products.length;
+    const moreBtn = isDone ? "" : `
+      <div style="text-align:center;margin-top:18px;grid-column:1/-1">
+        <button onclick="_flashShown+=4;renderFlashSection()" style="padding:11px 32px;border-radius:26px;background:var(--primary);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(230,81,0,.3);transition:transform .1s" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+          🔽 Voir plus — ${Math.min(_flashShown + 4, products.length)} offre${products.length > 1 ? "s" : ""}
+        </button>
+      </div>`;
+    el.innerHTML = visible.map(p => productCard({...p, name:p.title}, true)).join("") + moreBtn;
+  } else {
+    // Ville sélectionnée : tout afficher
+    el.innerHTML = products.map(p => productCard({...p, name:p.title}, true)).join("");
+  }
 }
 
 // Charge une catégorie depuis l'API dans une grille
@@ -1354,24 +1379,51 @@ function renderShop() {
 }
 
 // ============ SECTION SERVICES ============
+const SERVICE_CATS = ["services","evenements"];
+let _servicesAll   = [];
+let _servicesShown = 4;
+
 async function loadServicesSection() {
+  _servicesAll   = [];
+  _servicesShown = 4;
   const grid = document.getElementById("servicesGrid");
   if (!grid) return;
-  const SERVICE_CATS = ["services","evenements"];
   let all = [];
   try {
     const raw = await (await fetch("/api/products" + getCityParam())).json();
     all = Array.isArray(raw) ? raw : (raw.products || []);
   } catch {}
-  const items = all.filter(p => SERVICE_CATS.includes(p.category));
+  _servicesAll = all.filter(p => SERVICE_CATS.includes(p.category));
+  renderServicesSection();
+}
+
+function renderServicesSection() {
+  const grid = document.getElementById("servicesGrid");
+  if (!grid) return;
+  const items = _servicesAll;
+  grid.style.display = "block";
   if (!items.length) {
-    grid.style.display = "block";
     grid.innerHTML = `<div class="empty-state"><div class="empty-ico">📋</div><p>Aucun service disponible pour le moment.</p></div>`;
     return;
   }
+
+  // Quand toutes les villes : liste plate progressive +4
+  if (!SELECTED_CITY) {
+    const visible = items.slice(0, _servicesShown);
+    const isDone  = _servicesShown >= items.length;
+    const moreBtn = isDone ? "" : `
+      <div style="text-align:center;margin-top:18px">
+        <button onclick="_servicesShown+=4;renderServicesSection()" style="padding:11px 32px;border-radius:26px;background:#1565c0;color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(21,101,192,.3);transition:transform .1s" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+          🔽 Voir plus — ${Math.min(_servicesShown + 4, items.length)} service${items.length > 1 ? "s" : ""}
+        </button>
+      </div>`;
+    grid.innerHTML = `<div class="products-grid shop-cat-grid">${visible.map(p => waOnlyCard({...p, name:p.title})).join("")}</div>${moreBtn}`;
+    return;
+  }
+
+  // Ville sélectionnée : regroupement par catégorie (comportement actuel)
   const byCat = {};
   for (const p of items) { if (!byCat[p.category]) byCat[p.category] = []; byCat[p.category].push(p); }
-  grid.style.display = "block";
   grid.innerHTML = Object.entries(byCat).map(([slug, catItems]) => {
     const catInfo = CATEGORIES.find(c => c[0] === slug) || [slug, "📋", slug];
     const [, icon, label] = catInfo;
@@ -2031,7 +2083,7 @@ function onPronoTypeChange(sel) {
 }
 
 // ============ IMAGE COMPRESSION (WebP) ============
-async function compressImage(file, maxW = 900, quality = 0.80) {
+async function compressImage(file, maxW = 200, quality = 0.70) {
   return new Promise(resolve => {
     const reader = new FileReader();
     reader.onload = ev => {
@@ -2533,7 +2585,7 @@ async function adminTab(which) {
       fetch("/api/admin/db-stats").then(r => r.json()).catch(() => ({})),
       fetch("/api/admin/db-size").then(r => r.json()).catch(() => null),
     ]);
-    const tableLabels = { users:"👥 Utilisateurs", products:"📦 Articles", orders:"🛒 Commandes", settings:"⚙️ Paramètres", rencontres:"❤️ Rencontres" };
+    const tableLabels = { users:"👥 Utilisateurs", products:"📦 Articles", orders:"🛒 Commandes", settings:"⚙️ Paramètres", rencontres:"❤️ Rencontres", sms_logs:"📱 SMS envoyés" };
 
     // Bandeau alerte espace BD
     let dbAlertHtml = "";
@@ -2631,6 +2683,19 @@ async function adminTab(which) {
           <div id="dbImportResult"></div>
         </div>
 
+        <!-- COMPRESSION IMAGES DB -->
+        <div class="db-section">
+          <div class="db-section-title">🖼️ Compresser les images existantes</div>
+          <p class="db-section-desc">Réduit la taille des images déjà enregistrées en base de données (produits + rencontres) à 70 % de qualité JPEG. Opération irréversible.</p>
+          <div class="db-actions">
+            <button class="btn btn-primary db-btn" onclick="compressDbImages()">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+              🗜️ Compresser les images DB
+            </button>
+          </div>
+          <div id="dbCompressResult"></div>
+        </div>
+
         <div class="db-warn-box">
           ⚠️ <strong>Important :</strong> L'import fonctionne par UPSERT (insertion ou mise à jour). Il ne supprime jamais de données existantes. Utilisez uniquement des fichiers générés par ce système.
         </div>
@@ -2642,6 +2707,47 @@ async function adminTab(which) {
     area.addEventListener("dragleave", () => area.classList.remove("drag-over"));
     area.addEventListener("drop", e => { e.preventDefault(); area.classList.remove("drag-over"); const f = e.dataTransfer.files[0]; if(f) importDbFileObj(f); });
 
+
+  } else if (which === "sms") {
+    const logs = await fetch("/api/admin/sms-logs?limit=100").then(r => r.json()).catch(() => []);
+    c.innerHTML = `
+      <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <h3 style="margin:0;font-size:17px">📱 Historique SMS envoyés</h3>
+          <p style="margin:4px 0 0;font-size:13px;color:var(--muted)">${logs.length} message${logs.length!==1?"s":""} enregistré${logs.length!==1?"s":""}</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="adminTab('sms')">🔄 Actualiser</button>
+      </div>
+      ${!logs.length
+        ? `<div class="empty-state"><div class="empty-ico">📭</div><p>Aucun SMS envoyé pour le moment.</p></div>`
+        : `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:#f5f5f5">
+              <th style="padding:10px 12px;text-align:left;border-bottom:2px solid var(--border);white-space:nowrap">📅 Date</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:2px solid var(--border);white-space:nowrap">📞 Destinataire</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:2px solid var(--border)">👤 Vendeur</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:2px solid var(--border)">📦 Produit</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:2px solid var(--border);white-space:nowrap">✅ Statut</th>
+            </tr></thead>
+            <tbody>
+              ${logs.map((s,i) => {
+                const date = new Date(s.created_at).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+                const ok   = s.status === "envoyé";
+                const rowBg = i % 2 === 0 ? "#fff" : "#fafafa";
+                return `<tr style="background:${rowBg};border-bottom:1px solid var(--border)">
+                  <td style="padding:9px 12px;color:var(--muted);font-size:12px;white-space:nowrap">${date}</td>
+                  <td style="padding:9px 12px;font-weight:600">${s.recipient_phone||"—"}</td>
+                  <td style="padding:9px 12px">${s.vendor_name||"—"}</td>
+                  <td style="padding:9px 12px;color:var(--muted);font-size:12px">${(s.product_name||"—").slice(0,60)}</td>
+                  <td style="padding:9px 12px">
+                    <span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;background:${ok?"#e8f5e9":"#ffebee"};color:${ok?"#2e7d32":"#c62828"}">
+                      ${ok?"✅ Envoyé":"❌ Échec"}
+                    </span>
+                    ${!ok && s.error_detail ? `<div style="font-size:11px;color:#999;margin-top:3px">${s.error_detail.slice(0,80)}</div>` : ""}
+                  </td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table></div>`}`;
 
   } else if (which === "settings") {
     const s = await (await fetch("/api/settings")).json();
@@ -2790,27 +2896,119 @@ function toggleSmsFields() {
   if (wrap) { wrap.style.opacity = enabled ? "1" : ".45"; wrap.style.pointerEvents = enabled ? "" : "none"; }
 }
 
-async function importDbFileObj(file) {
+function importDbFileObj(file) {
   const res = document.getElementById("dbImportResult");
   if (!file) return;
   const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
   const endpoint = isExcel ? "/api/admin/import/excel" : "/api/admin/import/json";
-  res.innerHTML = `<div class="db-import-progress">⏳ Import ${isExcel ? "Excel" : "JSON"} en cours…</div>`;
+  const sizeMb   = (file.size / 1024 / 1024).toFixed(1);
+
+  res.innerHTML = `
+    <div class="db-import-progress">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span>⬆️ Envoi du fichier (${sizeMb} Mo)…</span>
+        <span id="dbImportPct" style="font-weight:700">0 %</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="dbImportBar" style="width:0%;background:#1565c0;transition:width .15s linear"></div>
+      </div>
+      <div id="dbImportStatus" style="font-size:12px;color:var(--muted);margin-top:6px">Préparation…</div>
+    </div>`;
+
   const fd = new FormData();
   fd.append("file", file);
-  try {
-    const r = await fetch(endpoint, { method: "POST", body: fd });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+  const xhr = new XMLHttpRequest();
+
+  xhr.upload.onprogress = e => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round(e.loaded / e.total * 100);
+    const bar = document.getElementById("dbImportBar");
+    const lbl = document.getElementById("dbImportPct");
+    const sta = document.getElementById("dbImportStatus");
+    if (bar) bar.style.width = pct + "%";
+    if (lbl) lbl.textContent = pct + " %";
+    if (sta) sta.textContent = pct < 100 ? `Envoi : ${pct} %` : "Fichier reçu — traitement en cours…";
+    if (pct === 100 && bar) { bar.style.background = "#F57C00"; }
+  };
+
+  xhr.onload = () => {
+    const bar = document.getElementById("dbImportBar");
+    let d;
+    try { d = JSON.parse(xhr.responseText); } catch {
+      if (bar) { bar.style.width = "100%"; bar.style.background = "#c62828"; }
+      res.innerHTML = `<div class="db-import-err">❌ Erreur serveur inattendue (code ${xhr.status})</div>`;
+      toast("Erreur lors de l'import", "red");
+      return;
+    }
+    if (d.error) {
+      if (bar) { bar.style.width = "100%"; bar.style.background = "#c62828"; }
+      res.innerHTML = `<div class="db-import-err">❌ Erreur : ${d.error}</div>`;
+      toast("Erreur lors de l'import", "red");
+      return;
+    }
+    if (bar) { bar.style.width = "100%"; bar.style.background = "#43a047"; }
     const lignes = Object.entries(d.imported || {}).map(([t,n]) => `<li><strong>${t}</strong> : ${n} entrée(s) traitée(s)</li>`).join("");
     res.innerHTML = `<div class="db-import-ok">✅ Import ${isExcel ? "Excel" : "JSON"} réussi !<ul>${lignes}</ul></div>`;
     toast("Import terminé ✓", "green");
-  } catch (e) {
-    res.innerHTML = `<div class="db-import-err">❌ Erreur : ${e.message}</div>`;
-    toast("Erreur lors de l'import", "red");
-  }
+  };
+
+  xhr.onerror = () => {
+    res.innerHTML = `<div class="db-import-err">❌ Erreur réseau — vérifiez votre connexion</div>`;
+    toast("Erreur réseau", "red");
+  };
+
+  xhr.open("POST", endpoint);
+  xhr.send(fd);
 }
 function importDbFile(input) { if (input.files[0]) importDbFileObj(input.files[0]); }
+
+async function compressDbImages() {
+  const res = document.getElementById("dbCompressResult");
+  if (!res) return;
+  res.innerHTML = `
+    <div class="db-import-progress" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span>⏳ Compression en cours…</span>
+        <span id="compressPct" style="font-weight:700">0 %</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="compressBar" style="width:5%;background:#1565c0;transition:width .3s linear"></div>
+      </div>
+    </div>`;
+  // Barre de progression simulée pendant le traitement serveur
+  let pct = 5;
+  const iv = setInterval(() => {
+    pct = Math.min(pct + 3, 90);
+    const b = document.getElementById("compressBar");
+    const l = document.getElementById("compressPct");
+    if (b) b.style.width = pct + "%";
+    if (l) l.textContent = pct + " %";
+  }, 500);
+  try {
+    const r = await fetch("/api/admin/compress-images", { method: "POST" });
+    const d = await r.json();
+    clearInterval(iv);
+    const bar = document.getElementById("compressBar");
+    if (bar) { bar.style.width = "100%"; bar.style.background = d.ok ? "#43a047" : "#c62828"; }
+    if (d.ok) {
+      res.innerHTML = `<div class="db-import-ok" style="margin-top:12px">
+        ✅ Compression terminée !<br>
+        <ul style="margin-top:8px;padding-left:18px">
+          <li><strong>${d.total}</strong> image(s) analysée(s)</li>
+          <li><strong>${d.compressed}</strong> compressée(s) avec succès</li>
+          <li><strong>${d.skipped}</strong> déjà optimisée(s) (ignorées)</li>
+          ${d.errors > 0 ? `<li style="color:#c62828"><strong>${d.errors}</strong> erreur(s)</li>` : ""}
+        </ul>
+      </div>`;
+      toast("Compression terminée ✓", "green");
+    } else {
+      res.innerHTML = `<div class="db-import-err" style="margin-top:12px">❌ Erreur : ${d.error}</div>`;
+    }
+  } catch (e) {
+    clearInterval(iv);
+    res.innerHTML = `<div class="db-import-err" style="margin-top:12px">❌ Erreur réseau : ${e.message}</div>`;
+  }
+}
 
 function askApproveRencontre(id, prixCurrent, souscat) {
   modalHTML(`
