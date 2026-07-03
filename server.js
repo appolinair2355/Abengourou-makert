@@ -98,6 +98,7 @@ async function initDB() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_api_key TEXT DEFAULT 'cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_group_id TEXT DEFAULT '';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_enabled BOOLEAN DEFAULT TRUE;
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_sender_id TEXT DEFAULT 'Ikoddi';
 
     CREATE TABLE IF NOT EXISTS rencontres (
       id               BIGINT PRIMARY KEY,
@@ -226,8 +227,9 @@ async function getSettings() {
     categoryConfig: s.category_config || {},
     cabinePaymentLink: s.cabine_payment_link || "https://pay.wave.com/m/M_ci_CRgdcq5dsx3B/c/ci/",
     ikoddiApiKey: s.ikoddi_api_key || "cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9",
-    ikoddiGroupId: s.ikoddi_group_id || "",
+    ikoddiGroupId: s.ikoddi_group_id || "10001958",
     ikoddiEnabled: s.ikoddi_enabled !== false,
+    ikoddiSenderId: s.ikoddi_sender_id || "Ikoddi",
   };
   _settingsCacheTime = Date.now();
   return _settingsCache;
@@ -241,21 +243,71 @@ async function productVisible(p) {
   return vendorActive(rows[0]);
 }
 
+// ─── Détection automatique du pays selon le préfixe téléphonique ─────────────
+const PHONE_COUNTRY_MAP = [
+  { prefix: "225", phonecode: "225", iso: "CI" }, // Côte d'Ivoire
+  { prefix: "229", phonecode: "229", iso: "BJ" }, // Bénin
+  { prefix: "226", phonecode: "226", iso: "BF" }, // Burkina Faso
+  { prefix: "227", phonecode: "227", iso: "NE" }, // Niger
+  { prefix: "228", phonecode: "228", iso: "TG" }, // Togo
+  { prefix: "221", phonecode: "221", iso: "SN" }, // Sénégal
+  { prefix: "223", phonecode: "223", iso: "ML" }, // Mali
+  { prefix: "224", phonecode: "224", iso: "GN" }, // Guinée
+  { prefix: "237", phonecode: "237", iso: "CM" }, // Cameroun
+  { prefix: "236", phonecode: "236", iso: "CF" }, // Centrafrique
+  { prefix: "242", phonecode: "242", iso: "CG" }, // Congo
+  { prefix: "243", phonecode: "243", iso: "CD" }, // RDC
+  { prefix: "241", phonecode: "241", iso: "GA" }, // Gabon
+  { prefix: "234", phonecode: "234", iso: "NG" }, // Nigeria
+  { prefix: "233", phonecode: "233", iso: "GH" }, // Ghana
+  { prefix: "212", phonecode: "212", iso: "MA" }, // Maroc
+  { prefix: "213", phonecode: "213", iso: "DZ" }, // Algérie
+  { prefix: "216", phonecode: "216", iso: "TN" }, // Tunisie
+  { prefix: "20",  phonecode: "20",  iso: "EG" }, // Égypte
+  { prefix: "33",  phonecode: "33",  iso: "FR" }, // France
+];
+
+function detectCountry(phone) {
+  for (const c of PHONE_COUNTRY_MAP) {
+    if (phone.startsWith(c.prefix)) return c;
+  }
+  return { phonecode: "225", iso: "CI" }; // défaut CI
+}
+
 // ─── SMS sender ──────────────────────────────────────────────────────────────
 async function sendSMS(settings, to, message) {
   if (!settings.ikoddiEnabled) return { ok: false, skipped: true };
-  const apiKey = settings.ikoddiApiKey || "cGw3ZOF3K3bztjlYx5tAT52A5GpHaCF9";
+  const apiKey  = settings.ikoddiApiKey  || "";
   const groupId = settings.ikoddiGroupId || "";
-  if (!groupId || !to) return { ok: false, skipped: !to ? true : false, reason: !groupId ? "ikoddi_group_id_missing" : "no_phone" };
+  if (!apiKey)   return { ok: false, skipped: true, reason: "ikoddi_api_key_missing" };
+  if (!groupId)  return { ok: false, skipped: true, reason: "ikoddi_group_id_missing" };
+  if (!to)       return { ok: false, skipped: true, reason: "no_phone" };
   const phone = String(to).replace(/\D/g, "");
-  if (!phone) return { ok: false, skipped: true };
-  const from = settings.companyName ? settings.companyName.slice(0, 11) : "ABGMARKET";
+  if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
+
+  // Détection automatique du pays depuis le préfixe du numéro
+  const country = detectCountry(phone);
+
+  // Sender ID : doit être alphanumérique (max 11 chars), commencer et finir par alphanumérique
+  let from = (settings.ikoddiSenderId || "Ikoddi")
+    .replace(/[^a-zA-Z0-9\-]/g, "")
+    .replace(/^[\-]+|[\-]+$/g, "")
+    .slice(0, 11);
+  if (!from || !/[a-zA-Z]/.test(from)) from = "Ikoddi";
+
   try {
     const client = new Ikoddi().withApiKey(apiKey).withGroupId(groupId);
-    const result = await client.sendSMS([phone], from, message, false, "225", "CI");
-    return { ok: true, data: result };
+    // IKODDI attend le numéro international complet (ex: 2250767202271)
+    // smsBroadCast DOIT être une STRING "false"/"true" (pas un booléen) — sinon HTTP 400
+    const result = await client.sendSMS([phone], from, message, "false", country.phonecode, country.iso);
+    // Vérifier que l'envoi IKODDI est ok (HTTP 201 mais status peut être "Error")
+    const first = Array.isArray(result) ? result[0] : result;
+    if (first?.error) return { ok: false, error: first.error, data: first };
+    return { ok: true, data: result, country: country.iso };
   } catch (e) {
-    return { ok: false, error: String(e) };
+    const ikoddiResponse = e.response?.data || null;
+    const ikoddiStatus  = e.response?.status || null;
+    return { ok: false, error: String(e), ikoddiResponse, ikoddiStatus };
   }
 }
 
@@ -304,26 +356,27 @@ app.post("/api/settings", async (req, res) => {
   try {
     clearSettingsCache();
     const cur = await getSettings();
-    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig, cabinePaymentLink, ikoddiApiKey, ikoddiGroupId, ikoddiEnabled } = req.body || {};
-    const newName      = companyName      !== undefined ? companyName      : cur.companyName;
-    const newPhone     = companyPhone     !== undefined ? companyPhone     : cur.companyPhone;
-    const newEmail     = companyEmail     !== undefined ? companyEmail     : cur.companyEmail;
-    const newWebsite   = companyWebsite   !== undefined ? companyWebsite   : cur.companyWebsite;
-    const newWhatsapp  = companyWhatsapp  !== undefined ? String(companyWhatsapp).replace(/\D/g,"") : cur.companyWhatsapp;
-    const newPrice     = subscriptionPrice !== undefined ? Number(subscriptionPrice) : cur.subscriptionPrice;
-    const newSms       = sms ? { ...cur.sms, ...sms } : cur.sms;
-    const newCatCfg    = categoryConfig !== undefined ? categoryConfig : cur.categoryConfig;
+    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig, cabinePaymentLink, ikoddiApiKey, ikoddiGroupId, ikoddiEnabled, ikoddiSenderId } = req.body || {};
+    const newName       = companyName      !== undefined ? companyName      : cur.companyName;
+    const newPhone      = companyPhone     !== undefined ? companyPhone     : cur.companyPhone;
+    const newEmail      = companyEmail     !== undefined ? companyEmail     : cur.companyEmail;
+    const newWebsite    = companyWebsite   !== undefined ? companyWebsite   : cur.companyWebsite;
+    const newWhatsapp   = companyWhatsapp  !== undefined ? String(companyWhatsapp).replace(/\D/g,"") : cur.companyWhatsapp;
+    const newPrice      = subscriptionPrice !== undefined ? Number(subscriptionPrice) : cur.subscriptionPrice;
+    const newSms        = sms ? { ...cur.sms, ...sms } : cur.sms;
+    const newCatCfg     = categoryConfig !== undefined ? categoryConfig : cur.categoryConfig;
     const newCabineLink = cabinePaymentLink !== undefined ? cabinePaymentLink : cur.cabinePaymentLink;
-    const newIkoddiKey  = ikoddiApiKey  !== undefined ? ikoddiApiKey  : cur.ikoddiApiKey;
-    const newIkoddiGrp  = ikoddiGroupId !== undefined ? ikoddiGroupId : cur.ikoddiGroupId;
-    const newIkoddiOn   = ikoddiEnabled !== undefined ? Boolean(ikoddiEnabled) : cur.ikoddiEnabled;
+    const newIkoddiKey  = ikoddiApiKey   !== undefined ? ikoddiApiKey   : cur.ikoddiApiKey;
+    const newIkoddiGrp  = ikoddiGroupId  !== undefined ? ikoddiGroupId  : cur.ikoddiGroupId;
+    const newIkoddiOn   = ikoddiEnabled  !== undefined ? Boolean(ikoddiEnabled) : cur.ikoddiEnabled;
+    const newIkoddiSdr  = ikoddiSenderId !== undefined ? ikoddiSenderId : cur.ikoddiSenderId;
     await pool.query(
       `UPDATE settings SET company_name=$1, subscription_price=$2, sms_config=$3,
        company_phone=$4, company_email=$5, company_website=$6, company_whatsapp=$7,
        category_config=$8, cabine_payment_link=$9,
-       ikoddi_api_key=$10, ikoddi_group_id=$11, ikoddi_enabled=$12 WHERE id=1`,
+       ikoddi_api_key=$10, ikoddi_group_id=$11, ikoddi_enabled=$12, ikoddi_sender_id=$13 WHERE id=1`,
       [newName, newPrice, JSON.stringify(newSms), newPhone, newEmail, newWebsite, newWhatsapp,
-       JSON.stringify(newCatCfg), newCabineLink, newIkoddiKey, newIkoddiGrp, newIkoddiOn]
+       JSON.stringify(newCatCfg), newCabineLink, newIkoddiKey, newIkoddiGrp, newIkoddiOn, newIkoddiSdr]
     );
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: String(e) }); }
@@ -331,7 +384,15 @@ app.post("/api/settings", async (req, res) => {
 
 app.post("/api/settings/sms-test", async (req, res) => {
   try {
-    const settings = await getSettings();
+    const db = await getSettings();
+    // Les valeurs du formulaire (si fournies) priment sur la DB — test sans sauvegarder
+    const settings = {
+      ...db,
+      ikoddiEnabled:  req.body.ikoddiEnabled  !== undefined ? Boolean(req.body.ikoddiEnabled)  : db.ikoddiEnabled,
+      ikoddiApiKey:   req.body.ikoddiApiKey   !== undefined ? req.body.ikoddiApiKey   : db.ikoddiApiKey,
+      ikoddiGroupId:  req.body.ikoddiGroupId  !== undefined ? req.body.ikoddiGroupId  : db.ikoddiGroupId,
+      ikoddiSenderId: req.body.ikoddiSenderId !== undefined ? req.body.ikoddiSenderId : db.ikoddiSenderId,
+    };
     const r = await sendSMS(settings, req.body.to, `${settings.companyName}: SMS de test IKODDI ✓`);
     res.json(r);
   } catch (e) { res.status(500).json({ error: String(e) }); }
@@ -341,13 +402,22 @@ app.post("/api/settings/sms-test", async (req, res) => {
 app.post("/api/notify-vendor", async (req, res) => {
   try {
     const { vendorPhone, productName } = req.body || {};
-    if (!vendorPhone) return res.json({ ok: false, skipped: true });
+    console.log(`[notify-vendor] reçu → vendorPhone="${vendorPhone}" productName="${productName}"`);
+    if (!vendorPhone) {
+      console.log("[notify-vendor] ✗ vendorPhone vide, SMS ignoré");
+      return res.json({ ok: false, skipped: true });
+    }
     const settings = await getSettings();
+    console.log(`[notify-vendor] ikoddiEnabled=${settings.ikoddiEnabled} hasKey=${!!settings.ikoddiApiKey} groupId=${settings.ikoddiGroupId}`);
     const phone = String(vendorPhone).replace(/\D/g, "");
     const msg = `${settings.companyName}\n🔔 Nouveau contact !\nArticle : ${productName || "Non spécifié"}\nUn client est intéressé et vous contacte maintenant via WhatsApp.`;
     const result = await sendSMS(settings, phone, msg);
+    console.log(`[notify-vendor] résultat SMS:`, JSON.stringify(result));
     res.json(result);
-  } catch (e) { res.status(500).json({ error: String(e) }); }
+  } catch (e) {
+    console.error("[notify-vendor] erreur:", e.message);
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 // ─── Vendors ─────────────────────────────────────────────────────────────────
@@ -830,28 +900,31 @@ app.post("/api/admin/import/json", upload.single("file"), async (req, res) => {
       let n = 0;
       for (const p of data.products) {
         // Support both snake_case (raw DB export) and camelCase (API export)
-        const imgVal = p.image || null; // colonne réelle = image TEXT
+        const imgVal = p.image || null;
         await pool.query(`
           INSERT INTO products
             (id,title,description,price,old_price,category,image,stock,stock_init,
              owner_id,owner_name,owner_role,whatsapp,personal_phone,approved,blocked,
-             employer,job_location,contract_type,salary,deadline,created_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+             employer,job_location,contract_type,salary,deadline,created_at,city,expires_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
           ON CONFLICT (id) DO UPDATE SET
             title=EXCLUDED.title, description=EXCLUDED.description, price=EXCLUDED.price,
             old_price=EXCLUDED.old_price, category=EXCLUDED.category, image=EXCLUDED.image,
-            stock=EXCLUDED.stock, approved=EXCLUDED.approved, blocked=EXCLUDED.blocked
+            stock=EXCLUDED.stock, approved=EXCLUDED.approved, blocked=EXCLUDED.blocked,
+            city=EXCLUDED.city, expires_at=EXCLUDED.expires_at
         `, [
           p.id, p.title||p.name||"", p.description||"",
           Number(p.price)||0, p.old_price!=null?Number(p.old_price):null,
           p.category||"", imgVal,
-          Number(p.stock)||0, Number(p.stock_init||p.stock)||0,
+          Number(p.stock)||0, Number(p.stock_init||p.stockInit||p.stock)||0,
           p.owner_id||p.ownerId||"", p.owner_name||p.ownerName||"", p.owner_role||p.ownerRole||"vendeur",
           p.whatsapp||"", p.personal_phone||p.personalPhone||"",
           p.approved??false, p.blocked??false,
           p.employer||"", p.job_location||p.jobLocation||"",
           p.contract_type||p.contractType||"", p.salary||"", p.deadline||"",
-          p.created_at||p.createdAt||new Date()
+          p.created_at||p.createdAt||new Date(),
+          p.city||"",
+          p.expires_at||p.expiresAt||null
         ]);
         n++;
       }
@@ -905,14 +978,25 @@ app.post("/api/admin/import/json", upload.single("file"), async (req, res) => {
             sms_config=COALESCE($3, sms_config),
             company_phone=COALESCE($4, company_phone),
             company_email=COALESCE($5, company_email),
-            company_website=COALESCE($6, company_website)
+            company_website=COALESCE($6, company_website),
+            company_whatsapp=COALESCE($7, company_whatsapp),
+            ikoddi_api_key=COALESCE($8, ikoddi_api_key),
+            ikoddi_group_id=COALESCE($9, ikoddi_group_id),
+            ikoddi_enabled=COALESCE($10, ikoddi_enabled),
+            ikoddi_sender_id=COALESCE($11, ikoddi_sender_id),
+            cabine_payment_link=COALESCE($12, cabine_payment_link)
           WHERE id=1
         `, [
           s.company_name||null, s.subscription_price||null,
           s.sms_config ? JSON.stringify(s.sms_config) : null,
-          s.company_phone||null, s.company_email||null, s.company_website||null
+          s.company_phone||null, s.company_email||null, s.company_website||null,
+          s.company_whatsapp||null,
+          s.ikoddi_api_key||null, s.ikoddi_group_id||null,
+          s.ikoddi_enabled!=null ? s.ikoddi_enabled : null,
+          s.ikoddi_sender_id||null, s.cabine_payment_link||null
         ]);
       }
+      clearSettingsCache();
       report.settings = data.settings.length;
     }
 
@@ -969,7 +1053,8 @@ app.post("/api/admin/import/excel", upload.single("file"), async (req, res) => {
           ON CONFLICT (id) DO UPDATE SET
             title=EXCLUDED.title, description=EXCLUDED.description, price=EXCLUDED.price,
             old_price=EXCLUDED.old_price, category=EXCLUDED.category, city=EXCLUDED.city,
-            stock=EXCLUDED.stock, approved=EXCLUDED.approved, blocked=EXCLUDED.blocked
+            stock=EXCLUDED.stock, approved=EXCLUDED.approved, blocked=EXCLUDED.blocked,
+            image=COALESCE(products.image, EXCLUDED.image)
         `, [
           p.id, p.title||"", p.description||"",
           Number(p.price)||0, p.old_price ? Number(p.old_price) : null,
