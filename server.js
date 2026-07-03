@@ -7,6 +7,7 @@ const { Pool } = require("pg");
 const XLSX = require("xlsx");
 const multer = require("multer");
 const { Ikoddi } = require("ikoddi-client-sdk");
+const sharp = require("sharp");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -127,6 +128,17 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_products_owner      ON products(owner_id);
     CREATE INDEX IF NOT EXISTS idx_products_approved   ON products(approved, blocked);
     CREATE INDEX IF NOT EXISTS idx_products_created    ON products(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS sms_logs (
+      id               BIGSERIAL PRIMARY KEY,
+      recipient_phone  TEXT NOT NULL DEFAULT '',
+      vendor_name      TEXT DEFAULT '',
+      product_name     TEXT DEFAULT '',
+      message          TEXT DEFAULT '',
+      status           TEXT DEFAULT 'unknown',
+      error_detail     TEXT DEFAULT '',
+      created_at       TIMESTAMPTZ DEFAULT NOW()
+    );
 
     CREATE TABLE IF NOT EXISTS pharmacies_garde (
       city    TEXT PRIMARY KEY,
@@ -275,40 +287,43 @@ function detectCountry(phone) {
 }
 
 // ─── SMS sender ──────────────────────────────────────────────────────────────
-async function sendSMS(settings, to, message) {
-  if (!settings.ikoddiEnabled) return { ok: false, skipped: true };
-  const apiKey  = settings.ikoddiApiKey  || "";
-  const groupId = settings.ikoddiGroupId || "";
-  if (!apiKey)   return { ok: false, skipped: true, reason: "ikoddi_api_key_missing" };
-  if (!groupId)  return { ok: false, skipped: true, reason: "ikoddi_group_id_missing" };
-  if (!to)       return { ok: false, skipped: true, reason: "no_phone" };
-  const phone = String(to).replace(/\D/g, "");
-  if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
+// logData = { vendorName, productName } — pour historique admin
+async function sendSMS(settings, to, message, logData = {}) {
+  const phone = String(to || "").replace(/\D/g, "");
+  let result;
 
-  // Détection automatique du pays depuis le préfixe du numéro
-  const country = detectCountry(phone);
-
-  // Sender ID : doit être alphanumérique (max 11 chars), commencer et finir par alphanumérique
-  let from = (settings.ikoddiSenderId || "Ikoddi")
-    .replace(/[^a-zA-Z0-9\-]/g, "")
-    .replace(/^[\-]+|[\-]+$/g, "")
-    .slice(0, 11);
-  if (!from || !/[a-zA-Z]/.test(from)) from = "Ikoddi";
-
-  try {
-    const client = new Ikoddi().withApiKey(apiKey).withGroupId(groupId);
-    // IKODDI attend le numéro international complet (ex: 2250767202271)
-    // smsBroadCast DOIT être une STRING "false"/"true" (pas un booléen) — sinon HTTP 400
-    const result = await client.sendSMS([phone], from, message, "false", country.phonecode, country.iso);
-    // Vérifier que l'envoi IKODDI est ok (HTTP 201 mais status peut être "Error")
-    const first = Array.isArray(result) ? result[0] : result;
-    if (first?.error) return { ok: false, error: first.error, data: first };
-    return { ok: true, data: result, country: country.iso };
-  } catch (e) {
-    const ikoddiResponse = e.response?.data || null;
-    const ikoddiStatus  = e.response?.status || null;
-    return { ok: false, error: String(e), ikoddiResponse, ikoddiStatus };
+  if (!settings.ikoddiEnabled)      result = { ok: false, skipped: true, reason: "disabled" };
+  else if (!settings.ikoddiApiKey)  result = { ok: false, skipped: true, reason: "ikoddi_api_key_missing" };
+  else if (!settings.ikoddiGroupId) result = { ok: false, skipped: true, reason: "ikoddi_group_id_missing" };
+  else if (!phone)                  result = { ok: false, skipped: true, reason: "no_phone" };
+  else {
+    const country = detectCountry(phone);
+    let from = (settings.ikoddiSenderId || "Ikoddi")
+      .replace(/[^a-zA-Z0-9\-]/g, "")
+      .replace(/^[\-]+|[\-]+$/g, "")
+      .slice(0, 11);
+    if (!from || !/[a-zA-Z]/.test(from)) from = "Ikoddi";
+    try {
+      const client = new Ikoddi().withApiKey(settings.ikoddiApiKey).withGroupId(settings.ikoddiGroupId);
+      const res = await client.sendSMS([phone], from, message, "false", country.phonecode, country.iso);
+      const first = Array.isArray(res) ? res[0] : res;
+      if (first?.error) result = { ok: false, error: first.error, data: first };
+      else result = { ok: true, data: res, country: country.iso };
+    } catch (e) {
+      result = { ok: false, error: String(e), ikoddiResponse: e.response?.data||null, ikoddiStatus: e.response?.status||null };
+    }
   }
+
+  // Journaliser dans sms_logs (ne bloque jamais l'exécution)
+  if (!result.skipped) {
+    pool.query(
+      `INSERT INTO sms_logs (recipient_phone, vendor_name, product_name, message, status, error_detail) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [phone, (logData.vendorName||"").slice(0,100), (logData.productName||"").slice(0,200),
+       message.slice(0,500), result.ok ? "envoyé" : "échec", (result.error||"").slice(0,300)]
+    ).catch(() => {});
+  }
+
+  return result;
 }
 
 app.use(express.json({ limit: "25mb" }));
@@ -401,21 +416,13 @@ app.post("/api/settings/sms-test", async (req, res) => {
 // ─── Notification vendeur (clic WhatsApp direct) ──────────────────────────────
 app.post("/api/notify-vendor", async (req, res) => {
   try {
-    const { vendorPhone, productName } = req.body || {};
-    console.log(`[notify-vendor] reçu → vendorPhone="${vendorPhone}" productName="${productName}"`);
-    if (!vendorPhone) {
-      console.log("[notify-vendor] ✗ vendorPhone vide, SMS ignoré");
-      return res.json({ ok: false, skipped: true });
-    }
+    const { vendorPhone, productName, vendorName } = req.body || {};
+    if (!vendorPhone) return res.json({ ok: false, skipped: true });
     const settings = await getSettings();
-    console.log(`[notify-vendor] ikoddiEnabled=${settings.ikoddiEnabled} hasKey=${!!settings.ikoddiApiKey} groupId=${settings.ikoddiGroupId}`);
-    const phone = String(vendorPhone).replace(/\D/g, "");
     const msg = `${settings.companyName}\n🔔 Nouveau contact !\nArticle : ${productName || "Non spécifié"}\nUn client est intéressé et vous contacte maintenant via WhatsApp.`;
-    const result = await sendSMS(settings, phone, msg);
-    console.log(`[notify-vendor] résultat SMS:`, JSON.stringify(result));
+    const result = await sendSMS(settings, vendorPhone, msg, { vendorName: vendorName||"", productName: productName||"" });
     res.json(result);
   } catch (e) {
-    console.error("[notify-vendor] erreur:", e.message);
     res.status(500).json({ error: String(e) });
   }
 });
@@ -658,7 +665,10 @@ app.post("/api/orders", async (req, res) => {
     const smsResults = [];
     for (const [phone, articles] of Object.entries(owners)) {
       const msg = `${settings.companyName} - ${orderNo}\nNouvelle commande: ${articles.join(", ")}\nClient: ${b.name||""} ${b.phone||""}\n${mode}\nTotal: ${b.total||0} FCFA`;
-      smsResults.push(await sendSMS(settings, phone, msg));
+      // Récupérer le nom du vendeur depuis la map owners pour le log
+      const { rows: vRows } = await pool.query("SELECT owner_name FROM products WHERE whatsapp=$1 OR personal_phone=$1 LIMIT 1", [phone]).catch(()=>({rows:[]}));
+      const vendorName = vRows[0]?.owner_name || "";
+      smsResults.push(await sendSMS(settings, phone, msg, { vendorName, productName: articles.join(", ") }));
     }
 
     await pool.query("UPDATE orders SET sms_results=$1 WHERE id=$2", [JSON.stringify(smsResults), id]);
@@ -792,10 +802,23 @@ app.post("/api/rencontres/delete", async (req, res) => {
 
 // ─── EXPORT / IMPORT BASE DE DONNÉES ─────────────────────────────────────────
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage() }); // pas de limite de taille
+
+// Retourner JSON même en cas d'erreur multer (fichier trop volumineux, etc.)
+function handleUpload(req, res, next) {
+  upload.single("file")(req, res, err => {
+    if (err) {
+      const msg = err.code === "LIMIT_FILE_SIZE"
+        ? "Fichier trop volumineux (maximum 200 Mo)"
+        : err.message || "Erreur lors de l'upload";
+      return res.status(413).json({ error: msg });
+    }
+    next();
+  });
+}
 
 // Toutes les tables exportées (noms de table → colonnes à exclure pour la sécurité minimale)
-const EXPORT_TABLES = ["users", "products", "orders", "settings", "rencontres"];
+const EXPORT_TABLES = ["users", "products", "orders", "settings", "rencontres", "sms_logs"];
 
 // Export JSON complet de toutes les tables
 app.get("/api/admin/export/json", async (req, res) => {
@@ -871,8 +894,66 @@ app.get("/api/admin/db-stats", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
+// Historique SMS (50 derniers)
+app.get("/api/admin/sms-logs", async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit)||100, 500);
+    const { rows } = await pool.query(
+      `SELECT * FROM sms_logs ORDER BY created_at DESC LIMIT $1`, [limit]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// Compression des images existantes en base de données
+app.post("/api/admin/compress-images", async (req, res) => {
+  try {
+    let compressed = 0, skipped = 0, errors = 0;
+
+    // Produits
+    const { rows: products } = await pool.query(
+      `SELECT id, image FROM products WHERE image IS NOT NULL AND image LIKE 'data:%'`
+    );
+    for (const p of products) {
+      try {
+        const b64 = p.image.replace(/^data:image\/\w+;base64,/, "");
+        const buf = Buffer.from(b64, "base64");
+        const out = await sharp(buf).resize({ width: 200, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
+        const newB64 = "data:image/jpeg;base64," + out.toString("base64");
+        if (newB64.length < p.image.length) {
+          await pool.query("UPDATE products SET image=$1 WHERE id=$2", [newB64, p.id]);
+          compressed++;
+        } else { skipped++; }
+      } catch { errors++; }
+    }
+
+    // Rencontres (photos)
+    const { rows: rencontres } = await pool.query(
+      `SELECT id, photo FROM rencontres WHERE photo IS NOT NULL AND photo LIKE 'data:%'`
+    );
+    for (const r of rencontres) {
+      try {
+        const b64 = r.photo.replace(/^data:image\/\w+;base64,/, "");
+        const buf = Buffer.from(b64, "base64");
+        const out = await sharp(buf).resize({ width: 200, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
+        const newB64 = "data:image/jpeg;base64," + out.toString("base64");
+        if (newB64.length < r.photo.length) {
+          await pool.query("UPDATE rencontres SET photo=$1 WHERE id=$2", [newB64, r.id]);
+          compressed++;
+        } else { skipped++; }
+      } catch { errors++; }
+    }
+
+    res.json({
+      ok: true,
+      total: products.length + rencontres.length,
+      compressed, skipped, errors
+    });
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
 // Import JSON — réimporte les données (UPSERT par table)
-app.post("/api/admin/import/json", upload.single("file"), async (req, res) => {
+app.post("/api/admin/import/json", handleUpload, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Fichier manquant" });
     const data = JSON.parse(req.file.buffer.toString("utf8"));
@@ -935,14 +1016,19 @@ app.post("/api/admin/import/json", upload.single("file"), async (req, res) => {
     if (data.orders) {
       let n = 0;
       for (const o of data.orders) {
+        const itemsVal = o.items != null
+          ? (typeof o.items === "string" ? o.items : JSON.stringify(o.items))
+          : "[]";
+        const smsVal = o.sms_results != null
+          ? (typeof o.sms_results === "string" ? o.sms_results : JSON.stringify(o.sms_results))
+          : "[]";
         await pool.query(`
           INSERT INTO orders (id,order_no,client_name,client_phone,delivery,items,total,pay_method,pay_num,sms_results,created_at)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
           ON CONFLICT (id) DO NOTHING
-        `, [o.id,o.order_no||"",o.client_name||"",o.client_phone||"",o.delivery||"",
-            typeof o.items==="string"?o.items:JSON.stringify(o.items||[]),
-            Number(o.total)||0,o.pay_method||"",o.pay_num||"",
-            o.sms_results||null,o.created_at||new Date()]);
+        `, [o.id, o.order_no||"", o.client_name||"", o.client_phone||"", o.delivery||"",
+            itemsVal, Number(o.total)||0, o.pay_method||"", o.pay_num||"", smsVal,
+            o.created_at||new Date()]);
         n++;
       }
       report.orders = n;
@@ -1000,12 +1086,28 @@ app.post("/api/admin/import/json", upload.single("file"), async (req, res) => {
       report.settings = data.settings.length;
     }
 
+    // sms_logs
+    if (data.sms_logs && Array.isArray(data.sms_logs)) {
+      let n = 0;
+      for (const s of data.sms_logs) {
+        if (!s.id) continue;
+        await pool.query(`
+          INSERT INTO sms_logs (id,recipient_phone,vendor_name,product_name,message,status,error_detail,created_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          ON CONFLICT (id) DO NOTHING
+        `, [s.id, s.recipient_phone||"", s.vendor_name||"", s.product_name||"",
+            s.message||"", s.status||"", s.error_detail||"", s.created_at||new Date()]);
+        n++;
+      }
+      report.sms_logs = n;
+    }
+
     res.json({ ok: true, imported: report });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
 // ─── Import Excel ─────────────────────────────────────────────────────────────
-app.post("/api/admin/import/excel", upload.single("file"), async (req, res) => {
+app.post("/api/admin/import/excel", handleUpload, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Fichier manquant" });
     const wb = XLSX.read(req.file.buffer, { type: "buffer" });
@@ -1255,7 +1357,42 @@ app.post("/api/sante/garde/delete", async (req, res) => {
 // ─── SPA fallback ─────────────────────────────────────────────────────────────
 app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
+// ─── Compression automatique des images existantes au démarrage ───────────────
+async function autoCompressImages() {
+  try {
+    const tables = [
+      { table: "products",  col: "image", pk: "id" },
+      { table: "rencontres", col: "photo", pk: "id" },
+    ];
+    let total = 0, done = 0;
+    for (const { table, col, pk } of tables) {
+      const { rows } = await pool.query(
+        `SELECT ${pk}, ${col} FROM ${table} WHERE ${col} IS NOT NULL AND ${col} LIKE 'data:%'`
+      );
+      for (const row of rows) {
+        try {
+          const raw = row[col].replace(/^data:image\/\w+;base64,/, "");
+          const buf = Buffer.from(raw, "base64");
+          const out = await sharp(buf).resize({ width: 200, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
+          const newB64 = "data:image/jpeg;base64," + out.toString("base64");
+          if (newB64.length < row[col].length) {
+            await pool.query(`UPDATE ${table} SET ${col}=$1 WHERE ${pk}=$2`, [newB64, row[pk]]);
+            done++;
+          }
+          total++;
+        } catch { total++; }
+      }
+    }
+    if (total > 0) console.log(`🖼️  Images compressées : ${done}/${total}`);
+  } catch (e) {
+    console.error("⚠️  Compression images (non bloquant) :", e.message);
+  }
+}
+
 // ─── Démarrage ────────────────────────────────────────────────────────────────
 initDB()
-  .then(() => app.listen(PORT, "0.0.0.0", () => console.log(`ABENGOUROU-MARKET sur http://0.0.0.0:${PORT}`)))
+  .then(() => app.listen(PORT, "0.0.0.0", () => {
+    console.log(`ABENGOUROU-MARKET sur http://0.0.0.0:${PORT}`);
+    autoCompressImages(); // arrière-plan — ne bloque pas le démarrage
+  }))
   .catch((err) => { console.error("❌ Erreur DB:", err.message); process.exit(1); });
