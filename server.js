@@ -17,7 +17,7 @@ const ADMIN_PWD = process.env.ADMIN_PWD || "arrow";
 
 // ─── Connexion PostgreSQL ────────────────────────────────────────────────────
 const dbUrl = process.env.DATABASE_URL ||
-  "postgresql://boutique_en_ligne_user:28HKostTV7XpwU2nVso0cKbQwd1avOBn@dpg-d8pq2337uimc73aedqog-a.oregon-postgres.render.com/boutique_en_ligne";
+  "postgresql://basse_wuwe_user:FY7K4NQkqJssyTDWfhONQ7GOAFMscWOU@dpg-d93t0e8js32c73d4ivs0-a/basse_wuwe ";
 
 const isLocalDB = dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1");
 const pool = new Pool({
