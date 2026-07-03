@@ -446,16 +446,23 @@ function lockedCard(p, price, catSlug) {
 function paidListingCard(p) { return infoCard(p); }
 function openPaidListing(p) { openInfoDetail(p); }
 
-// ============ WHATSAPP WRAPPER — notifie le vendeur par SMS puis ouvre WhatsApp ============
+// ============ WHATSAPP WRAPPER — ouvre WhatsApp puis envoie SMS au vendeur après 5 s ============
 function waOpen(wa, encodedText, productName) {
-  if (wa) {
-    fetch("/api/notify-vendor", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorPhone: wa, productName: productName || "" })
-    }).catch(() => {});
-  }
   window.open("https://wa.me/" + wa + "?text=" + encodedText, "_blank");
+  if (wa) {
+    const payload = JSON.stringify({ vendorPhone: wa, productName: productName || "" });
+    // sendBeacon fonctionne même quand le navigateur passe en arrière-plan (mobile)
+    // fetch est utilisé en fallback sur les navigateurs qui ne supportent pas sendBeacon
+    setTimeout(() => {
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/api/notify-vendor", new Blob([payload], { type: "application/json" }));
+        } else {
+          fetch("/api/notify-vendor", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload }).catch(() => {});
+        }
+      } catch (_) {}
+    }, 5000); // SMS envoyé 5 secondes après la redirection WhatsApp
+  }
 }
 
 // ============ WHATSAPP ORDER HELPER ============
@@ -1019,23 +1026,71 @@ function cabinePayer() {
 }
 
 // ============ PAGE 2 TABS : Concours / Actualités / Emploi ============
-let _page2All = null;
+let _page2All   = null;
+let _page2Items = [];  // items filtrés pour l'onglet actif + ville
+let _page2Step  = 0;   // 0=2 items  |  1+=quartiles
+let _page2Cat   = "";  // cat active
+
 async function switchPage2Tab(cat, btn) {
   document.querySelectorAll(".page2-tab").forEach(b => b.classList.remove("active"));
   if (btn) btn.classList.add("active");
   const el = document.getElementById("page2Content");
   if (!el) return;
   el.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>`;
-  try { _page2All = await (await fetch("/api/products")).json(); } catch { _page2All = []; }
+  try { _page2All = await (await fetch("/api/products" + getCityParam())).json(); } catch { _page2All = []; }
   const dbCat = cat === "concours" ? "concours-ci" : cat;
-  const items = _page2All.filter(p => p.category === dbCat);
-  const icon = cat === "concours" ? "📚" : cat === "actualites" ? "📰" : "💼";
+  const allItems = Array.isArray(_page2All) ? _page2All : (_page2All.products || []);
+  _page2Items = allItems.filter(p => p.category === dbCat);
+  _page2Cat   = cat;
+  _page2Step  = 0;
+  renderPage2Tab();
+}
+
+function renderPage2Tab() {
+  const el    = document.getElementById("page2Content");
+  if (!el) return;
+  const cat   = _page2Cat;
+  const items = _page2Items;
+  const N     = items.length;
+  const icon  = cat === "concours" ? "📚" : cat === "actualites" ? "📰" : "💼";
   const label = cat === "concours" ? "Concours CI" : cat === "actualites" ? "Actualités" : "Offres d'emploi";
-  if (!items.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-ico">${icon}</div><p>Aucune annonce dans <strong>${label}</strong> pour le moment.</p></div>`;
+  const city  = SELECTED_CITY || "";
+
+  if (!N) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-ico">${icon}</div><p>Aucune annonce dans <strong>${label}</strong>${city ? ` à <strong>${city}</strong>` : ""} pour le moment.</p></div>`;
     return;
   }
-  el.innerHTML = `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">${items.length} annonce${items.length>1?"s":""}</div><div class="products-grid">${items.map(p => waOnlyCard({...p, name:p.title})).join("")}</div>`;
+
+  const catQ = Math.ceil(N / 4);
+  let shownItems;
+  if (_page2Step === 0) {
+    shownItems = items.slice(0, 2);
+  } else if (N < 5) {
+    shownItems = items;
+  } else {
+    shownItems = items.slice(0, Math.min(_page2Step * catQ, N));
+  }
+  const isDone = shownItems.length >= N;
+
+  let moreBtn = "";
+  if (!isDone) {
+    const nextStep  = _page2Step + 1;
+    const nextCount = N < 5 ? N : Math.min(nextStep * catQ, N);
+    const qLabel    = N < 5 ? "" : ` <span style="opacity:.75;font-size:11px">(${nextStep}/4)</span>`;
+    moreBtn = `<div style="text-align:center;margin-top:18px">
+      <button onclick="_page2Step++;renderPage2Tab()" style="padding:11px 32px;border-radius:26px;background:var(--primary);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(230,81,0,.3);transition:transform .1s" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+        🔽 Voir plus — ${nextCount} annonce${nextCount > 1 ? "s" : ""}${qLabel}
+      </button>
+    </div>`;
+  } else if (_page2Step > 0) {
+    moreBtn = `<div style="text-align:center;margin-top:14px;padding:10px 16px;background:#f1f8e9;border-radius:10px;font-size:13px;color:#388e3c;font-weight:600">✅ Toutes les <strong>${N}</strong> annonces affichées</div>`;
+  }
+
+  const cityTag = city ? `📍 ${city} · ` : "";
+  el.innerHTML = `
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${cityTag}${shownItems.length} / ${N} annonce${N > 1 ? "s" : ""}</div>
+    <div class="products-grid">${shownItems.map(p => waOnlyCard({...p, name:p.title})).join("")}</div>
+    ${moreBtn}`;
 }
 
 // ============ RENDER HOME ============
@@ -1143,7 +1198,7 @@ async function loadNewsSection() {
   if (!el) return;
   let products = [];
   try {
-    const all = await (await fetch("/api/products")).json();
+    const all = await (await fetch("/api/products" + getCityParam())).json();
     products = (Array.isArray(all) ? all : (all.products||[])).filter(p => p.category === "actualites");
   } catch {}
   if (!products.length) {
@@ -1161,11 +1216,13 @@ async function loadNewsSection() {
 const SHOP_EXCLUDED = new Set(["rencontres","sante","scolaires","pronostics","transport","immobilier","restaurants","actualites","concours-ci","emploi","recrutement","cabine-en-ligne"]);
 
 let _shopAll  = null; // cache produits filtrés par ville
-let _shopStep = 0;   // 0=vue initiale 1/cat  |  1=Q1  2=Q2  3=Q3  4=tout
+let _shopStep = 0;   // 0=vue initiale 2/cat  |  1=Q1  2=Q2  3=Q3  4=tout
+let _catSteps = {};  // étape d'expansion par catégorie dans la vue initiale
 
 async function loadShop() {
   _shopAll  = null;
   _shopStep = 0;
+  _catSteps = {};
   const grid = document.getElementById("shopGrid");
   if (!grid) return;
   grid.style.display = "block";
@@ -1199,7 +1256,7 @@ function renderShop() {
 
   const quarter = Math.ceil(total / 4);
 
-  // ── Étape 0 : 1 article par catégorie ─────────────────────────────────
+  // ── Étape 0 : 2 articles par catégorie avec voir plus progressif ──────
   if (_shopStep === 0) {
     const byCat = {};
     for (const p of products) {
@@ -1207,20 +1264,49 @@ function renderShop() {
       byCat[p.category].push(p);
     }
     const catCount = Object.keys(byCat).length;
-    const q1count  = Math.min(quarter, total);
 
     const blocks = Object.entries(byCat).map(([slug, items]) => {
       const [, icon, label] = CATEGORIES.find(c => c[0] === slug) || [slug, "🛍️", slug];
+      const N    = items.length;
+      const catQ = Math.ceil(N / 4);
+      const step = _catSteps[slug] || 0;
+
+      // Articles affichés : 2 au départ, puis 1/4 par clic
+      let shownItems;
+      if (step === 0) {
+        shownItems = items.slice(0, 2);
+      } else if (N < 5) {
+        shownItems = items; // < 5 produits → tout afficher dès le 1er clic
+      } else {
+        shownItems = items.slice(0, Math.min(step * catQ, N));
+      }
+      const isDone = shownItems.length >= N;
+
+      let moreBtn = "";
+      if (!isDone) {
+        const nextStep  = step + 1;
+        const nextCount = N < 5 ? N : Math.min(nextStep * catQ, N);
+        const qLabel    = N < 5 ? "" : ` <span style="opacity:.75;font-size:11px">(${nextStep}/4)</span>`;
+        moreBtn = `<div style="text-align:center;padding:8px 0 4px">
+          <button onclick="_catSteps['${slug}']=(_catSteps['${slug}']||0)+1;renderShop()" style="padding:9px 24px;border-radius:24px;background:var(--primary);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(230,81,0,.3);transition:transform .1s" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+            🔽 Voir plus — ${nextCount} article${nextCount > 1 ? "s" : ""}${qLabel}
+          </button>
+        </div>`;
+      } else if (step > 0) {
+        moreBtn = `<div style="text-align:center;padding:6px;font-size:12px;color:#388e3c;font-weight:600">✅ Tous les ${N} articles affichés</div>`;
+      }
+
       return `<div class="shop-cat-block">
         <div class="shop-cat-header">
           <span class="shop-cat-icon">${icon}</span>
           <div>
             <h3>${label}</h3>
-            <small style="color:var(--muted)">${items.length} article${items.length > 1 ? "s" : ""} · ${cityTag}</small>
+            <small style="color:var(--muted)">${N} article${N > 1 ? "s" : ""} · ${cityTag}</small>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="filterCat('${slug}','1','${city}')">Voir tout →</button>
         </div>
-        <div class="products-grid shop-cat-grid">${productCard({...items[0], name: items[0].title}, false)}</div>
+        <div class="products-grid shop-cat-grid">${shownItems.map(p => productCard({...p, name: p.title}, false)).join("")}</div>
+        ${moreBtn}
       </div>`;
     }).join("");
 
@@ -1228,12 +1314,7 @@ function renderShop() {
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
         ${cityTag} · <strong>${catCount}</strong> catégorie${catCount > 1 ? "s" : ""} · <strong>${total}</strong> article${total > 1 ? "s" : ""} disponible${total > 1 ? "s" : ""}
       </div>
-      ${blocks}
-      <div style="text-align:center;margin-top:24px;padding-bottom:4px">
-        <button onclick="_shopStep=1;renderShop()" style="padding:13px 36px;border-radius:30px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(230,81,0,.35);transition:transform .1s" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
-          🔽 Voir plus — ${q1count} article${q1count > 1 ? "s" : ""} <span style="opacity:.75;font-size:12px">(1/4)</span>
-        </button>
-      </div>`;
+      ${blocks}`;
     return;
   }
 
@@ -2629,9 +2710,14 @@ async function adminTab(which) {
             <div class="form-hint">Clé API fournie dans votre tableau de bord <a href="https://app.ikoddi.com" target="_blank">app.ikoddi.com</a>.</div>
           </div>
           <div class="form-group" style="margin-top:12px">
-            <label>🏢 IKODDI Group ID (Organisation)</label>
-            <input id="setIkoddiGroup" value="${s.ikoddiGroupId || ""}" placeholder="ex: 6633a4b9e..." />
-            <div class="form-hint">Identifiant de votre organisation IKODDI (visible dans les paramètres du compte).</div>
+            <label>🏢 IKODDI Organization ID (Group ID)</label>
+            <input id="setIkoddiGroup" value="${s.ikoddiGroupId || "10001958"}" placeholder="10001958" />
+            <div class="form-hint">Votre identifiant d'organisation IKODDI — visible dans <strong>app.ikoddi.com → Organisation → Détails</strong>. Obligatoire pour l'envoi SMS.</div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label>✏️ Sender ID (expéditeur SMS, max 11 car.)</label>
+            <input id="setIkoddiSender" value="${s.ikoddiSenderId || "Ikoddi"}" placeholder="Ikoddi" maxlength="11" />
+            <div class="form-hint">Nom affiché sur le téléphone du vendeur. Doit être alphanumérique, commencer et finir par une lettre ou un chiffre. <strong>Laissez "Ikoddi"</strong> si vous n'avez pas de Sender ID approuvé par KREEZUS — sinon le SMS sera rejeté (erreur 400).</div>
           </div>
           <div class="form-group" style="margin-top:12px">
             <label>📤 Test SMS (numéro de test)</label>
@@ -2639,7 +2725,7 @@ async function adminTab(which) {
               <input id="smsTestNum" placeholder="+2250700000000" style="flex:1" />
               <button class="btn btn-primary" onclick="testSMS()" style="white-space:nowrap">📤 Tester</button>
             </div>
-            <div class="form-hint">Entrez un numéro Côte d'Ivoire (ex : 2250700000000) et cliquez sur Tester.</div>
+            <div class="form-hint">Entrez n'importe quel numéro international (ex : 2250700000000, 2290195501564…) — le pays est détecté automatiquement.</div>
           </div>
         </div>
 
@@ -2937,7 +3023,6 @@ function toggleCatPrice(slug) {
 
 async function saveSettings() {
   const waRaw = document.getElementById("setWhatsapp")?.value || "";
-  // Collecte config catégories (catégories + services)
   const categoryConfig = {};
   for (const [slug] of [...CONFIG_CATS, ...CONFIG_SERVICE_CATS]) {
     const sel = document.getElementById(`catCfg_${slug}`);
@@ -2953,31 +3038,54 @@ async function saveSettings() {
     categoryConfig,
     cabinePaymentLink:  document.getElementById("setCabineLink")?.value || "",
     ikoddiApiKey:       document.getElementById("setIkoddiKey")?.value || "",
-    ikoddiGroupId:      document.getElementById("setIkoddiGroup")?.value || "",
+    ikoddiGroupId:      document.getElementById("setIkoddiGroup")?.value || "10001958",
     ikoddiEnabled:      document.getElementById("setIkoddiEnabled")?.checked ?? true,
+    ikoddiSenderId:     document.getElementById("setIkoddiSender")?.value || "Ikoddi",
   };
-  await fetch("/api/settings", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
-  // Mettre à jour les variables en mémoire
-  if (body.companyWhatsapp) RENCONTRES_WA = body.companyWhatsapp;
-  if (body.cabinePaymentLink) CABINE_PAYMENT_LINK = body.cabinePaymentLink;
-  // Mettre à jour le footer dynamiquement
-  if (body.companyPhone) { const el = document.getElementById("footerPhone"); if(el) el.textContent = body.companyPhone; const eh = document.getElementById("headerPhone"); if(eh) eh.textContent = body.companyPhone; }
-  if (body.companyEmail) { const el = document.getElementById("footerEmail"); if(el) el.textContent = body.companyEmail; }
   const msg = document.getElementById("settingsMsg");
-  if (msg) { msg.className = "sms-result ok"; msg.textContent = "✓ Paramètres enregistrés avec succès."; }
-  toast("Paramètres enregistrés ✓","green");
+  try {
+    const resp = await fetch("/api/settings", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const d = await resp.json();
+    if (!resp.ok || d.error) throw new Error(d.error || `HTTP ${resp.status}`);
+    // Mettre à jour les variables en mémoire
+    if (body.companyWhatsapp) RENCONTRES_WA = body.companyWhatsapp;
+    if (body.cabinePaymentLink) CABINE_PAYMENT_LINK = body.cabinePaymentLink;
+    if (body.companyPhone) { const el = document.getElementById("footerPhone"); if(el) el.textContent = body.companyPhone; const eh = document.getElementById("headerPhone"); if(eh) eh.textContent = body.companyPhone; }
+    if (body.companyEmail) { const el = document.getElementById("footerEmail"); if(el) el.textContent = body.companyEmail; }
+    if (msg) { msg.className = "sms-result ok"; msg.textContent = "✓ Paramètres enregistrés avec succès."; }
+    toast("Paramètres enregistrés ✓","green");
+  } catch(e) {
+    if (msg) { msg.className = "sms-result err"; msg.textContent = `✗ Échec de la sauvegarde : ${e.message}`; }
+    toast("Erreur lors de la sauvegarde","red");
+  }
 }
 
 async function testSMS() {
   const to = document.getElementById("smsTestNum").value.trim();
   if (!to) return toast("Entrez un numéro de test","red");
   const btn = event.target; btn.disabled = true; btn.textContent = "Envoi en cours…";
-  const r = await (await fetch("/api/settings/sms-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to})})).json();
-  btn.disabled = false; btn.textContent = "📤 Envoyer un SMS test";
+  // Envoie les valeurs actuelles du formulaire — pas besoin de sauvegarder avant de tester
+  const payload = {
+    to,
+    ikoddiEnabled:  document.getElementById("setIkoddiEnabled")?.checked ?? true,
+    ikoddiApiKey:   document.getElementById("setIkoddiKey")?.value   || "",
+    ikoddiGroupId:  document.getElementById("setIkoddiGroup")?.value || "",
+    ikoddiSenderId: document.getElementById("setIkoddiSender")?.value || "Ikoddi",
+  };
+  const r = await (await fetch("/api/settings/sms-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})).json();
+  btn.disabled = false; btn.textContent = "📤 Tester";
+  const REASONS = {
+    ikoddi_api_key_missing:   "Clé API manquante — remplissez le champ Clé API IKODDI.",
+    ikoddi_group_id_missing:  "Organization ID manquant — remplissez le champ Organization ID (ex : 10001958).",
+    no_phone:                 "Numéro de téléphone invalide ou vide.",
+  };
   const msg = document.getElementById("settingsMsg");
   if (msg) {
     msg.className = r.ok ? "sms-result ok" : "sms-result err";
-    msg.textContent = r.ok ? `✓ SMS envoyé avec succès (statut HTTP ${r.status || "200"})` : `✗ Échec : ${r.error || r.body || "Configuration incomplète — vérifiez l'URL et les en-têtes."}`;
+    const detail = r.ikoddiResponse ? ` — Réponse IKODDI : ${JSON.stringify(r.ikoddiResponse)}` : "";
+    msg.textContent = r.ok
+      ? `✓ SMS envoyé avec succès vers ${to} (pays : ${r.country || "?"})`
+      : `✗ Échec HTTP ${r.ikoddiStatus || ""} : ${REASONS[r.reason] || r.error || "Erreur inconnue."}${detail}`;
   }
 }
 
