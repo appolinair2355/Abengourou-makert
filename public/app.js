@@ -336,7 +336,7 @@ function startCountdown() {
 
 // ============ INFO CARD (Concours / Emploi / Événements — lecture seule) ============
 function infoCard(p) {
-  const img = p.image ? `<img src="${p.image}" alt="${p.title}" loading="lazy" style="width:100%;height:180px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" />` : `<div style="width:100%;height:100px;background:linear-gradient(135deg,#F57C00,#E65100);border-radius:var(--radius) var(--radius) 0 0;display:flex;align-items:center;justify-content:center;font-size:40px">${p.category==="concours-ci"?"📚":p.category==="emploi"?"💼":"🎉"}</div>`;
+  const img = p.image ? `<img src="${p.image}" alt="${p.title}" loading="lazy" style="width:100%;height:200px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0" />` : `<div style="width:100%;height:200px;background:linear-gradient(135deg,#F57C00,#E65100);border-radius:var(--radius) var(--radius) 0 0;display:flex;align-items:center;justify-content:center;font-size:40px">${p.category==="concours-ci"?"📚":p.category==="emploi"?"💼":"🎉"}</div>`;
   const catLabel = CATEGORIES.find(c=>c[0]===p.category)?.[2] || p.category;
   const desc = (p.description || "").trim();
   const pData = JSON.stringify({id:p.id,title:p.title,description:desc,image:p.image||null,category:p.category}).replace(/'/g,"&#39;");
