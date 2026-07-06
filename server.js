@@ -12,10 +12,12 @@ const sharp = require("sharp");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const ADMIN_ID  = process.env.ADMIN_ID  || "buzz";
-const ADMIN_PWD = process.env.ADMIN_PWD || "arrow";
+const ADMIN_ID  = "buzz";
+const ADMIN_PWD = "arrow";
 
 // ─── Connexion PostgreSQL ────────────────────────────────────────────────────
+// DATABASE_URL est fournie automatiquement par l'hébergeur (Replit, Render, Railway…)
+// La valeur ci-dessous est le fallback pour Render.com
 const dbUrl = process.env.DATABASE_URL ||
   "postgresql://basse_wuwe_user:FY7K4NQkqJssyTDWfhONQ7GOAFMscWOU@dpg-d93t0e8js32c73d4ivs0-a/basse_wuwe";
 
@@ -100,6 +102,16 @@ async function initDB() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_group_id TEXT DEFAULT '';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_sender_id TEXT DEFAULT 'Ikoddi';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_api_key TEXT DEFAULT 'fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_endpoint TEXT DEFAULT 'https://api.featherless.ai/v1/chat/completions';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'meta-llama/Meta-Llama-3.1-8B-Instruct';
+
+    CREATE TABLE IF NOT EXISTS ai_brain (
+      id         BIGSERIAL PRIMARY KEY,
+      question   TEXT NOT NULL,
+      answer     TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
 
     CREATE TABLE IF NOT EXISTS rencontres (
       id               BIGINT PRIMARY KEY,
@@ -242,6 +254,9 @@ async function getSettings() {
     ikoddiGroupId: s.ikoddi_group_id || "10001958",
     ikoddiEnabled: s.ikoddi_enabled !== false,
     ikoddiSenderId: s.ikoddi_sender_id || "Ikoddi",
+    aiApiKey: s.ai_api_key || "fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84",
+    aiEndpoint: s.ai_endpoint || "https://api.featherless.ai/v1/chat/completions",
+    aiModel: s.ai_model || "meta-llama/Meta-Llama-3.1-8B-Instruct",
   };
   _settingsCacheTime = Date.now();
   return _settingsCache;
@@ -371,7 +386,7 @@ app.post("/api/settings", async (req, res) => {
   try {
     clearSettingsCache();
     const cur = await getSettings();
-    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig, cabinePaymentLink, ikoddiApiKey, ikoddiGroupId, ikoddiEnabled, ikoddiSenderId } = req.body || {};
+    const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig, cabinePaymentLink, ikoddiApiKey, ikoddiGroupId, ikoddiEnabled, ikoddiSenderId, aiApiKey, aiEndpoint, aiModel } = req.body || {};
     const newName       = companyName      !== undefined ? companyName      : cur.companyName;
     const newPhone      = companyPhone     !== undefined ? companyPhone     : cur.companyPhone;
     const newEmail      = companyEmail     !== undefined ? companyEmail     : cur.companyEmail;
@@ -385,13 +400,18 @@ app.post("/api/settings", async (req, res) => {
     const newIkoddiGrp  = ikoddiGroupId  !== undefined ? ikoddiGroupId  : cur.ikoddiGroupId;
     const newIkoddiOn   = ikoddiEnabled  !== undefined ? Boolean(ikoddiEnabled) : cur.ikoddiEnabled;
     const newIkoddiSdr  = ikoddiSenderId !== undefined ? ikoddiSenderId : cur.ikoddiSenderId;
+    const newAiKey      = aiApiKey    !== undefined ? aiApiKey    : cur.aiApiKey;
+    const newAiEndpoint = aiEndpoint  !== undefined ? aiEndpoint  : cur.aiEndpoint;
+    const newAiModel    = aiModel     !== undefined ? aiModel     : cur.aiModel;
     await pool.query(
       `UPDATE settings SET company_name=$1, subscription_price=$2, sms_config=$3,
        company_phone=$4, company_email=$5, company_website=$6, company_whatsapp=$7,
        category_config=$8, cabine_payment_link=$9,
-       ikoddi_api_key=$10, ikoddi_group_id=$11, ikoddi_enabled=$12, ikoddi_sender_id=$13 WHERE id=1`,
+       ikoddi_api_key=$10, ikoddi_group_id=$11, ikoddi_enabled=$12, ikoddi_sender_id=$13,
+       ai_api_key=$14, ai_endpoint=$15, ai_model=$16 WHERE id=1`,
       [newName, newPrice, JSON.stringify(newSms), newPhone, newEmail, newWebsite, newWhatsapp,
-       JSON.stringify(newCatCfg), newCabineLink, newIkoddiKey, newIkoddiGrp, newIkoddiOn, newIkoddiSdr]
+       JSON.stringify(newCatCfg), newCabineLink, newIkoddiKey, newIkoddiGrp, newIkoddiOn, newIkoddiSdr,
+       newAiKey, newAiEndpoint, newAiModel]
     );
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: String(e) }); }
@@ -543,6 +563,17 @@ app.post("/api/products", async (req, res) => {
       autoApprove = vRows[0] ? vendorActive(vRows[0]) : false;
     }
 
+    // Compression de l'image à 45 % à l'upload
+    let imgData = b.image || null;
+    if (imgData && imgData.startsWith("data:image")) {
+      try {
+        const raw = imgData.replace(/^data:image\/\w+;base64,/, "");
+        const buf = Buffer.from(raw, "base64");
+        const out = await sharp(buf).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 45 }).toBuffer();
+        imgData = "data:image/jpeg;base64," + out.toString("base64");
+      } catch { /* garder l'image originale si erreur */ }
+    }
+
     await pool.query(
       `INSERT INTO products
         (id,title,category,city,price,old_price,stock,stock_init,image,description,
@@ -552,7 +583,7 @@ app.post("/api/products", async (req, res) => {
       [
         id, b.title, b.category, b.city||"Abengourou", Number(b.price)||0,
         b.oldPrice ? Number(b.oldPrice) : null,
-        stock, stock, b.image||null, b.description||"",
+        stock, stock, imgData, b.description||"",
         b.whatsapp||"", b.personalPhone||"",
         b.ownerId, b.ownerName||"", b.ownerRole||"vendeur",
         autoApprove,
@@ -763,11 +794,21 @@ app.post("/api/rencontres", async (req, res) => {
     const b = req.body || {};
     if (!b.nom || !b.prenom || !b.birthdate) return res.status(400).json({ error: "Champs requis manquants" });
     const id = Date.now();
+    // Compression photo rencontre à 45 %
+    let photoData = b.photo || null;
+    if (photoData && photoData.startsWith("data:image")) {
+      try {
+        const raw = photoData.replace(/^data:image\/\w+;base64,/, "");
+        const buf = Buffer.from(raw, "base64");
+        const out = await sharp(buf).resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 45 }).toBuffer();
+        photoData = "data:image/jpeg;base64," + out.toString("base64");
+      } catch { /* garder la photo originale si erreur */ }
+    }
     await pool.query(
       `INSERT INTO rencontres (id,nom,prenom,birthdate,profession,ville,quartier,sexe,whatsapp,phone,photo,description,sous_cat,prix_acces)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [id, b.nom, b.prenom, b.birthdate, b.profession||"", b.ville||"", b.quartier||"",
-       b.sexe||"", b.whatsapp||"", b.phone||"", b.photo||null, b.description||"",
+       b.sexe||"", b.whatsapp||"", b.phone||"", photoData, b.description||"",
        b.souscat||"amitie", Number(b.prixAcces)||500]
     );
     res.json({ ok: true, id });
@@ -918,12 +959,10 @@ app.post("/api/admin/compress-images", async (req, res) => {
       try {
         const b64 = p.image.replace(/^data:image\/\w+;base64,/, "");
         const buf = Buffer.from(b64, "base64");
-        const out = await sharp(buf).resize({ width: 200, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
-        const newB64 = "data:image/jpeg;base64," + out.toString("base64");
-        if (newB64.length < p.image.length) {
-          await pool.query("UPDATE products SET image=$1 WHERE id=$2", [newB64, p.id]);
-          compressed++;
-        } else { skipped++; }
+        const out = await sharp(buf).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 45 }).toBuffer();
+        await pool.query("UPDATE products SET image=$1 WHERE id=$2",
+          ["data:image/jpeg;base64," + out.toString("base64"), p.id]);
+        compressed++;
       } catch { errors++; }
     }
 
@@ -935,12 +974,10 @@ app.post("/api/admin/compress-images", async (req, res) => {
       try {
         const b64 = r.photo.replace(/^data:image\/\w+;base64,/, "");
         const buf = Buffer.from(b64, "base64");
-        const out = await sharp(buf).resize({ width: 200, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
-        const newB64 = "data:image/jpeg;base64," + out.toString("base64");
-        if (newB64.length < r.photo.length) {
-          await pool.query("UPDATE rencontres SET photo=$1 WHERE id=$2", [newB64, r.id]);
-          compressed++;
-        } else { skipped++; }
+        const out = await sharp(buf).resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 45 }).toBuffer();
+        await pool.query("UPDATE rencontres SET photo=$1 WHERE id=$2",
+          ["data:image/jpeg;base64," + out.toString("base64"), r.id]);
+        compressed++;
       } catch { errors++; }
     }
 
@@ -1354,6 +1391,137 @@ app.post("/api/sante/garde/delete", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
+// ─── IA — Cerveau (Brain) CRUD ────────────────────────────────────────────────
+app.get("/api/ai/brain", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM ai_brain ORDER BY created_at DESC");
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+app.post("/api/ai/brain", async (req, res) => {
+  try {
+    const { question, answer } = req.body || {};
+    if (!question || !answer) return res.status(400).json({ error: "question et answer requis" });
+    const { rows } = await pool.query(
+      "INSERT INTO ai_brain (question, answer) VALUES ($1, $2) RETURNING *",
+      [question.trim(), answer.trim()]
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+app.post("/api/ai/brain/delete", async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    await pool.query("DELETE FROM ai_brain WHERE id=$1", [id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// ─── IA — Chat (public) ───────────────────────────────────────────────────────
+const AI_GREETINGS = /^(bonjour|bonsoir|salut|hello|hi|coucou|bonne (journ[eé]e|nuit|soir[eé]e)|hey|yo)\s*[!?.]*$/i;
+
+app.post("/api/ai/chat", async (req, res) => {
+  try {
+    const { message } = req.body || {};
+    if (!message || !message.trim()) return res.status(400).json({ error: "message requis" });
+
+    // 0. Salutations → réponse locale instantanée AVANT tout appel DB
+    if (AI_GREETINGS.test(message.trim())) {
+      const s0 = await getSettings().catch(() => ({ companyName: "ABENGOUROU-MARKET" }));
+      return res.json({
+        reply: `Bonjour et bienvenue sur ${s0.companyName} ! 🛍️\n\nJe suis votre assistante virtuelle. Je suis là pour vous aider à :\n• Trouver des produits ou services\n• Répondre à vos questions sur la boutique\n• Vous guider dans vos achats\n\nQue puis-je faire pour vous aujourd'hui ? 😊`,
+        source: "local"
+      });
+    }
+
+    const settings = await getSettings();
+
+    // 1. Recherche dans le cerveau (correspondance par mots-clés)
+    const { rows: brain } = await pool.query("SELECT * FROM ai_brain");
+    const normalize = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, " ").trim();
+    const userNorm = normalize(message);
+    const userWords = new Set(userNorm.split(/\s+/).filter(w => w.length > 2));
+
+    for (const entry of brain) {
+      const entryNorm = normalize(entry.question);
+      if (entryNorm === userNorm) return res.json({ reply: entry.answer, source: "brain" });
+      const entryWords = entryNorm.split(/\s+/).filter(w => w.length > 2);
+      if (entryWords.length === 0) continue;
+      const matches = entryWords.filter(w => userWords.has(w)).length;
+      if (matches / entryWords.length >= 0.6) return res.json({ reply: entry.answer, source: "brain" });
+    }
+
+    // 2. Appel API IA (endpoint configurable par l'admin)
+    const apiKey   = settings.aiApiKey   || "fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84";
+    const endpoint = settings.aiEndpoint || "https://api.featherless.ai/v1/chat/completions";
+    const model    = settings.aiModel    || "meta-llama/Meta-Llama-3.1-8B-Instruct";
+
+    const systemPrompt = `Tu es l'assistante virtuelle officielle de ${settings.companyName}, une plateforme numérique de commerce et services à Abengourou, Côte d'Ivoire.
+
+MISSION : Aider les visiteurs et clients à trouver des produits, services, emplois, logements et informations disponibles sur cette boutique en ligne.
+
+CATÉGORIES DISPONIBLES :
+- 🛍️ Marketplace : téléphones, mode, informatique, électronique, supermarché…
+- 🏠 Immobilier : terrains, maisons, appartements à louer ou acheter
+- 🚗 Véhicules & Motos : voitures, motos, tricycles
+- 💼 Emploi & Concours CI : offres d'emploi, concours de la fonction publique
+- 🍽️ Restaurants & Livraison : plats à commander, livraison à domicile
+- 🚕 Transport & Taxi : chauffeurs disponibles, livraisons express
+- ❤️ Rencontres & Amitiés : rencontres sérieuses entre adultes (accès payant)
+- 🌾 Agriculture, Mode & Beauté, Scolaires, Événements, Braderie…
+- 📞 Cabine en Ligne : appels téléphoniques via Wave/Orange Money
+
+CONTACTS : ${settings.companyPhone} | Email : ${settings.companyEmail}
+Paiements acceptés : Wave, Orange Money, MTN MoMo, Moov Money, livraison à domicile.
+Horaires : Lun–Sam 08h–18h.
+
+RÈGLES :
+1. Réponds UNIQUEMENT en français, de façon chaleureuse, précise et concise (max 3-4 phrases).
+2. Si la question n'a AUCUN rapport avec cette boutique, réponds : "Je suis désolée, je suis disponible uniquement pour ABENGOUROU-MARKET. Puis-je vous aider à trouver un produit ?"
+3. N'invente jamais de prix ou de disponibilités — dis au client de consulter les annonces sur le site.`;
+
+    const aiRes = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message }
+        ],
+        max_tokens: 400,
+        temperature: 0.65
+      })
+    });
+
+    if (!aiRes.ok) {
+      const errText = await aiRes.text().catch(() => "");
+      console.error("AI API error:", aiRes.status, errText.slice(0, 200));
+      // Réponse de secours intelligente basée sur des mots-clés
+      const lc = message.toLowerCase();
+      if (lc.includes("heure") || lc.includes("horaire") || lc.includes("ouvert"))
+        return res.json({ reply: `${settings.companyName} est ouvert du lundi au samedi de 08h à 18h. 🕐`, source: "local" });
+      if (lc.includes("contact") || lc.includes("appel") || lc.includes("téléphone") || lc.includes("numero"))
+        return res.json({ reply: `Vous pouvez nous contacter au ${settings.companyPhone} ou par email : ${settings.companyEmail}. 📞`, source: "local" });
+      if (lc.includes("paiement") || lc.includes("payer") || lc.includes("wave") || lc.includes("orange"))
+        return res.json({ reply: `Nous acceptons Wave, Orange Money, MTN MoMo, Moov Money et le paiement à la livraison. 💳`, source: "local" });
+      if (lc.includes("catégorie") || lc.includes("produit") || lc.includes("article") || lc.includes("vend"))
+        return res.json({ reply: `Nous proposons : Immobilier, Véhicules, Téléphones, Mode, Restaurants, Emploi, Concours, Transport, Rencontres et bien plus ! Explorez les catégories sur le site. 🛍️`, source: "local" });
+      return res.json({ reply: `Bonjour ! Je suis l'assistante de ${settings.companyName}. Pour toute question sur nos produits et services, consultez les annonces sur le site ou contactez-nous au ${settings.companyPhone}. 😊`, source: "local" });
+    }
+
+    const data = await aiRes.json();
+    const reply = data.choices?.[0]?.message?.content?.trim() || "Je n'ai pas pu générer une réponse. Veuillez réessayer.";
+    res.json({ reply, source: "ai" });
+  } catch (e) {
+    console.error("AI chat error:", e.message);
+    const settings = await getSettings().catch(() => ({ companyPhone: "+225 0767202271", companyName: "ABENGOUROU-MARKET" }));
+    res.json({ reply: `Bonjour ! Pour toute question, contactez-nous au ${settings.companyPhone} ou parcourez les catégories sur le site. 😊`, source: "local" });
+  }
+});
+
 // ─── SPA fallback ─────────────────────────────────────────────────────────────
 app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
@@ -1361,11 +1529,11 @@ app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.h
 async function autoCompressImages() {
   try {
     const tables = [
-      { table: "products",  col: "image", pk: "id" },
-      { table: "rencontres", col: "photo", pk: "id" },
+      { table: "products",   col: "image", pk: "id", w: 800 },
+      { table: "rencontres", col: "photo", pk: "id", w: 400 },
     ];
     let total = 0, done = 0;
-    for (const { table, col, pk } of tables) {
+    for (const { table, col, pk, w } of tables) {
       const { rows } = await pool.query(
         `SELECT ${pk}, ${col} FROM ${table} WHERE ${col} IS NOT NULL AND ${col} LIKE 'data:%'`
       );
@@ -1373,17 +1541,17 @@ async function autoCompressImages() {
         try {
           const raw = row[col].replace(/^data:image\/\w+;base64,/, "");
           const buf = Buffer.from(raw, "base64");
-          const out = await sharp(buf).resize({ width: 200, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
+          // Toujours recompresser (pas de condition sur la taille)
+          const out = await sharp(buf).resize({ width: w, withoutEnlargement: true }).jpeg({ quality: 45 }).toBuffer();
           const newB64 = "data:image/jpeg;base64," + out.toString("base64");
-          if (newB64.length < row[col].length) {
-            await pool.query(`UPDATE ${table} SET ${col}=$1 WHERE ${pk}=$2`, [newB64, row[pk]]);
-            done++;
-          }
+          await pool.query(`UPDATE ${table} SET ${col}=$1 WHERE ${pk}=$2`, [newB64, row[pk]]);
+          done++;
           total++;
         } catch { total++; }
       }
     }
-    if (total > 0) console.log(`🖼️  Images compressées : ${done}/${total}`);
+    if (total > 0) console.log(`🖼️  Images recompressées (45%, ${done}/${total})`);
+    else console.log("🖼️  Aucune image data:// à compresser dans la DB.");
   } catch (e) {
     console.error("⚠️  Compression images (non bloquant) :", e.message);
   }
