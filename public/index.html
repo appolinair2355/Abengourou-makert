@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/styles.css?v=3" />
+<link rel="stylesheet" href="/styles.css?v=4" />
 </head>
 <body>
 
@@ -46,17 +46,26 @@
       </button>
     </div>
     <div class="header-actions">
-      <button class="hbtn" onclick="openAccount()">
-        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span class="hbtn-lbl">Mon compte</span>
+      <button class="hbtn hbtn-home" onclick="showHome()" title="Accueil">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span class="hbtn-lbl">Accueil</span>
       </button>
-      <button class="hbtn cart-btn" onclick="openCart()">
-        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      <button class="hbtn hbtn-asst" id="assistantFab" title="Assistante IA">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="12" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="10" r="1" fill="currentColor"/></svg>
+        <span class="hbtn-lbl">Assistante</span>
+      </button>
+      <button class="hbtn hbtn-profil" onclick="openAccount()" title="Mon profil">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span class="hbtn-lbl">Profil</span>
+      </button>
+      <button class="hbtn hbtn-panier cart-btn" onclick="openCart()" title="Panier">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
         <span class="hbtn-lbl">Panier</span>
         <span class="cart-badge" id="cartCount">0</span>
       </button>
-      <button class="hbtn menu-btn-mob" id="menuBtn">
-        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <button class="hbtn hbtn-menu menu-btn-mob" id="menuBtn" title="Menu">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <span class="hbtn-lbl">Menu</span>
       </button>
     </div>
   </div>
@@ -395,6 +404,27 @@
   <div class="modal" id="modalBody"></div>
 </div>
 
-<script src="/app.js?v=3"></script>
+<!-- ===== ASSISTANTE IA ===== -->
+<div id="assistantWindow">
+  <div class="asst-header">
+    <div class="asst-header-info">
+      <div class="asst-avatar">🤖</div>
+      <div>
+        <div class="asst-title">Assistante ABENGOUROU-MARKET</div>
+        <div class="asst-subtitle">En ligne · Répond en quelques secondes</div>
+      </div>
+    </div>
+    <button id="assistantClose" class="asst-close" title="Fermer">✕</button>
+  </div>
+  <div id="assistantMessages" class="asst-messages"></div>
+  <div class="asst-input-wrap">
+    <textarea id="assistantInput" class="asst-input" rows="1" placeholder="Posez votre question…"></textarea>
+    <button id="assistantSend" class="asst-send">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</div>
+
+<script src="/app.js?v=4"></script>
 </body>
 </html>

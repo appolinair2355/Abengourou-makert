@@ -2686,7 +2686,7 @@ async function adminTab(which) {
         <!-- COMPRESSION IMAGES DB -->
         <div class="db-section">
           <div class="db-section-title">🖼️ Compresser les images existantes</div>
-          <p class="db-section-desc">Réduit la taille des images déjà enregistrées en base de données (produits + rencontres) à 70 % de qualité JPEG. Opération irréversible.</p>
+          <p class="db-section-desc">Réduit la taille des images déjà enregistrées en base de données (produits + rencontres) à 45 % de qualité JPEG. Opération irréversible.</p>
           <div class="db-actions">
             <button class="btn btn-primary db-btn" onclick="compressDbImages()">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
@@ -2877,6 +2877,47 @@ async function adminTab(which) {
           </div>
         </div>
 
+        <!-- SECTION IA: Clé API IA -->
+        <div class="settings-section">
+          <div class="settings-section-title" style="background:linear-gradient(135deg,#4a148c,#7b1fa2)">🤖 Assistante IA — Configuration</div>
+          <p class="form-hint" style="margin-bottom:14px">L'assistante IA est visible par tous les visiteurs. Elle utilise une API compatible OpenAI (Featherless par défaut). Configurez les champs ci-dessous.</p>
+          <div class="form-group">
+            <label>🔑 Clé API IA</label>
+            <input id="setAiKey" value="${s.aiApiKey || "fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84"}" placeholder="fe_oa_..." />
+            <div class="form-hint">Clé par défaut : <code>fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84</code></div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label>🌐 Endpoint API (URL complète)</label>
+            <input id="setAiEndpoint" value="${s.aiEndpoint || "https://api.featherless.ai/v1/chat/completions"}" placeholder="https://api.featherless.ai/v1/chat/completions" />
+            <div class="form-hint">URL de l'API IA compatible OpenAI. Défaut : featherless.ai</div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label>🤖 Modèle IA</label>
+            <input id="setAiModel" value="${s.aiModel || "meta-llama/Meta-Llama-3.1-8B-Instruct"}" placeholder="meta-llama/Meta-Llama-3.1-8B-Instruct" />
+            <div class="form-hint">Nom du modèle à utiliser. Ex : meta-llama/Meta-Llama-3.1-8B-Instruct, gpt-4o-mini…</div>
+          </div>
+        </div>
+
+        <!-- SECTION IA: Cerveau -->
+        <div class="settings-section">
+          <div class="settings-section-title" style="background:linear-gradient(135deg,#4a148c,#7b1fa2)">🧠 Cerveau IA — Questions / Réponses exactes</div>
+          <p class="form-hint" style="margin-bottom:14px">Ajoutez des paires question/réponse. Quand un client pose une question qui correspond, l'assistante répond <strong>exactement</strong> avec votre réponse.</p>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+            <div class="form-group">
+              <label>Question</label>
+              <input id="brainQuestion" placeholder="Ex : Quels sont vos horaires ?" />
+            </div>
+            <div class="form-group">
+              <label>Réponse exacte</label>
+              <textarea id="brainAnswer" rows="3" placeholder="Ex : Nous sommes ouverts du lundi au samedi de 08h à 18h." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;resize:vertical"></textarea>
+            </div>
+            <button class="btn btn-primary" style="align-self:flex-start" onclick="saveBrainEntry()">
+              💾 Enregistrer dans le cerveau
+            </button>
+          </div>
+          <div id="brainList"><div style="color:var(--muted);font-size:13px">Chargement…</div></div>
+        </div>
+
         <!-- SECTION 3: Save -->
         <div class="settings-section">
           <div class="settings-section-title">💾 Enregistrer les paramètres</div>
@@ -2887,6 +2928,8 @@ async function adminTab(which) {
           <div id="settingsMsg" style="margin-top:12px"></div>
         </div>
       </div>`;
+    // Charger le cerveau IA
+    loadBrainList();
   }
 }
 
@@ -3239,6 +3282,9 @@ async function saveSettings() {
     ikoddiGroupId:      document.getElementById("setIkoddiGroup")?.value || "10001958",
     ikoddiEnabled:      document.getElementById("setIkoddiEnabled")?.checked ?? true,
     ikoddiSenderId:     document.getElementById("setIkoddiSender")?.value || "Ikoddi",
+    aiApiKey:           document.getElementById("setAiKey")?.value || "",
+    aiEndpoint:         document.getElementById("setAiEndpoint")?.value || "",
+    aiModel:            document.getElementById("setAiModel")?.value || "",
   };
   const msg = document.getElementById("settingsMsg");
   try {
@@ -3287,6 +3333,128 @@ async function testSMS() {
   }
 }
 
+// ============ CERVEAU IA — ADMIN ============
+async function loadBrainList() {
+  const el = document.getElementById("brainList");
+  if (!el) return;
+  const entries = await fetch("/api/ai/brain").then(r => r.json()).catch(() => []);
+  if (!entries.length) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:10px 0">Aucune entrée dans le cerveau IA. Ajoutez des questions/réponses ci-dessus.</div>`;
+    return;
+  }
+  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">
+    ${entries.map(e => `
+      <div style="background:#f9f0ff;border:1px solid #ce93d8;border-radius:8px;padding:12px;display:flex;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;color:#6a1b9a;margin-bottom:4px">❓ ${e.question}</div>
+          <div style="font-size:13px;color:#333;white-space:pre-wrap">💬 ${e.answer}</div>
+        </div>
+        <button onclick="deleteBrainEntry(${e.id})" style="background:none;border:none;color:#c62828;font-size:18px;cursor:pointer;flex-shrink:0;padding:0 4px" title="Supprimer">🗑</button>
+      </div>`).join("")}
+  </div>`;
+}
+
+async function saveBrainEntry() {
+  const question = document.getElementById("brainQuestion")?.value?.trim();
+  const answer   = document.getElementById("brainAnswer")?.value?.trim();
+  if (!question || !answer) return toast("Remplissez la question et la réponse", "red");
+  const r = await fetch("/api/ai/brain", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ question, answer }) });
+  if (!r.ok) return toast("Erreur lors de l'enregistrement", "red");
+  document.getElementById("brainQuestion").value = "";
+  document.getElementById("brainAnswer").value = "";
+  toast("✓ Entrée enregistrée dans le cerveau IA", "green");
+  loadBrainList();
+}
+
+async function deleteBrainEntry(id) {
+  if (!confirm("Supprimer cette entrée du cerveau IA ?")) return;
+  await fetch("/api/ai/brain/delete", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id }) });
+  toast("Entrée supprimée");
+  loadBrainList();
+}
+
+// ============ ASSISTANTE IA — CLIENT ============
+let _assistantOpen = false;
+let _assistantHistory = [];
+
+function toggleAssistant() {
+  const win = document.getElementById("assistantWindow");
+  if (!win) return;
+  _assistantOpen = !_assistantOpen;
+  win.style.display = _assistantOpen ? "flex" : "none";
+  if (_assistantOpen && _assistantHistory.length === 0) {
+    _assistantAddMsg("assistant", "Bienvenue dans la boutique ABENGOUROU-MARKET ! 🛍️\nJe suis votre assistante virtuelle. Que puis-je faire pour vous aujourd'hui ? Vous cherchez un produit, un service, un logement, un emploi…\nJe suis là pour vous aider ! 😊");
+    document.getElementById("assistantInput")?.focus();
+  }
+}
+
+function _assistantAddMsg(role, text) {
+  _assistantHistory.push({ role, text });
+  const msgs = document.getElementById("assistantMessages");
+  if (!msgs) return;
+  const div = document.createElement("div");
+  div.className = "asst-msg asst-msg-" + role;
+  div.innerHTML = `<div class="asst-bubble">${text.replace(/\n/g, "<br>")}</div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function sendAssistantMsg() {
+  const inp = document.getElementById("assistantInput");
+  const msg = inp?.value?.trim();
+  if (!msg) return;
+  inp.value = "";
+  _assistantAddMsg("user", msg);
+
+  const typing = document.createElement("div");
+  typing.className = "asst-msg asst-msg-assistant asst-typing";
+  typing.innerHTML = `<div class="asst-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>`;
+  document.getElementById("assistantMessages").appendChild(typing);
+  document.getElementById("assistantMessages").scrollTop = 99999;
+
+  try {
+    const r = await fetch("/api/ai/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ message: msg }) });
+    let d;
+    try { d = await r.json(); } catch { d = null; }
+    typing.remove();
+    if (d && d.reply) { _assistantAddMsg("assistant", d.reply); return; }
+    // Réponse inattendue du serveur → fallback local
+    throw new Error("no reply");
+  } catch {
+    typing.remove();
+    // Fallback local si le serveur est injoignable ou renvoie une erreur
+    const lc = msg.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    let localReply;
+    if (/bonjour|bonsoir|salut|hello|hi|coucou|hey/.test(lc))
+      localReply = "Bonjour ! 😊 Je suis l'assistante d'ABENGOUROU-MARKET. Comment puis-je vous aider ?";
+    else if (/heure|horaire|ouvert|ferme/.test(lc))
+      localReply = "Nous sommes ouverts du lundi au samedi de 08h à 18h. 🕐";
+    else if (/contact|appel|telephone|numero|joindre/.test(lc))
+      localReply = "Contactez-nous au +225 0767202271 ou par email : contact@abengourou-market.com 📞";
+    else if (/paiement|payer|wave|orange|momo|livraison/.test(lc))
+      localReply = "Nous acceptons Wave, Orange Money, MTN MoMo, Moov Money et le paiement à la livraison. 💳";
+    else if (/produit|article|categorie|vend|achet|trouv/.test(lc))
+      localReply = "Nous proposons : Immobilier, Véhicules, Téléphones, Mode, Restaurants, Emploi, Transport et bien plus ! Explorez les catégories. 🛍️";
+    else
+      localReply = "Je rencontre un problème de connexion. Contactez-nous au +225 0767202271 ou réessayez dans un moment. 😊";
+    _assistantAddMsg("assistant", localReply);
+  }
+}
+
+function assistantKeydown(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAssistantMsg(); }
+}
+
+function initAssistant() {
+  const fab = document.getElementById("assistantFab");
+  const win = document.getElementById("assistantWindow");
+  if (!fab || !win) return;
+  fab.onclick = toggleAssistant;
+  document.getElementById("assistantSend")?.addEventListener("click", sendAssistantMsg);
+  document.getElementById("assistantClose")?.addEventListener("click", () => { _assistantOpen = false; win.style.display = "none"; });
+  document.getElementById("assistantInput")?.addEventListener("keydown", assistantKeydown);
+}
+
 // ============ UTILS ============
 function modalHTML(html) { document.getElementById("modalBody").innerHTML = html; document.getElementById("modal").classList.add("show"); }
 function closeModal() { document.getElementById("modal").classList.remove("show"); }
@@ -3316,3 +3484,4 @@ document.getElementById("yr").textContent = new Date().getFullYear();
 renderHome();
 updateCartCount();
 setupMenuButtons();
+initAssistant();
