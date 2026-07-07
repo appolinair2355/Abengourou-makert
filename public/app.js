@@ -489,9 +489,18 @@ function orderViaWhatsapp(wa, name) {
   lb.className = "lightbox-back";
   lb.innerHTML = '<span class="lightbox-close" onclick="closeLightbox()">✕</span><img id="lbImg" src="" alt="" />';
   lb.addEventListener("click", function(e) { if (e.target === lb) closeLightbox(); });
-  document.addEventListener("keydown", function(e) { if (e.key === "Escape") closeLightbox(); });
+  document.addEventListener("keydown", function(e) { if (e.key === "Escape") { closeLightbox(); closePIM(); } });
   document.body.appendChild(lb);
+
+  // Backdrop modal fiche produit
+  const pim = document.createElement("div");
+  pim.className = "pim-backdrop";
+  pim.id = "pimBackdrop";
+  pim.innerHTML = '<div class="pim-sheet" id="pimSheet"></div>';
+  pim.addEventListener("click", function(e) { if (e.target === pim) closePIM(); });
+  document.body.appendChild(pim);
 })();
+
 function openLightbox(src, alt) {
   const lb = document.querySelector(".lightbox-back");
   if (!lb) return;
@@ -506,18 +515,74 @@ function closeLightbox() {
   document.body.style.overflow = "";
 }
 
+// ============ MODAL FICHE PRODUIT (clic image) ============
+function openProductImageModal(p) {
+  const ALL_CATS = [...CONFIG_CATS, ...CONFIG_SERVICE_CATS];
+  const catInfo  = ALL_CATS.find(c => c[0] === (p.category || ""));
+  const catEmoji = catInfo ? catInfo[1] : "🛍️";
+  const catLabel = catInfo ? catInfo[2] : (p.category || "");
+  const wa       = (p.whatsapp || "").replace(/\D/g, "");
+  const name     = p.name || p.title || "";
+  const nameSafe = name.replace(/'/g, "\\'");
+  const desc     = (p.description || "").trim();
+  const imgSrc   = p.image || null;
+  const red      = (p.oldPrice && p.price) ? Math.round(((p.oldPrice - p.price) / p.oldPrice) * 100) : 0;
+
+  const imgHtml = imgSrc
+    ? `<img class="pim-img" src="${imgSrc}" alt="${name}" onclick="openLightbox('${imgSrc.replace(/'/g,"\\'")}','${nameSafe}')" title="Cliquer pour agrandir 🔍" />`
+    : `<div class="pim-img-placeholder">${p.emoji || "🛍️"}</div>`;
+
+  const stockHtml = p.stock > 0
+    ? `<span class="pim-badge ok">✅ ${p.stock} en stock</span>`
+    : `<span class="pim-badge out">❌ Rupture de stock</span>`;
+
+  const sheet = document.getElementById("pimSheet");
+  sheet.innerHTML = `
+    ${imgHtml}
+    <div class="pim-body">
+      <div class="pim-cat">${catEmoji} ${catLabel}</div>
+      <div class="pim-name">${name}</div>
+      <div class="pim-prices">
+        ${p.price > 0 ? `<span class="pim-price">${fmt(p.price)}</span>` : ""}
+        ${p.oldPrice  ? `<span class="pim-oldprice">${fmt(p.oldPrice)}</span>` : ""}
+        ${red > 0     ? `<span class="pim-badge ok">-${red}%</span>` : ""}
+        ${stockHtml}
+      </div>
+      ${desc ? `<div class="pim-desc">${desc}</div>` : ""}
+    </div>
+    <div class="pim-actions">
+      <button class="btn btn-ghost" onclick="closePIM()">✕ Fermer</button>
+      <button class="btn btn-ghost" onclick="closePIM();renderHome()">🏠 Accueil</button>
+      ${wa ? `<button class="btn btn-primary" style="background:#25D366;border-color:#25D366;flex:2" onclick="waOpen('${wa}',encodeURIComponent('Bonjour, je suis intéressé par : ${nameSafe}'),'${nameSafe}')">💬 Commander sur WhatsApp</button>` : ""}
+    </div>`;
+
+  document.getElementById("pimBackdrop").classList.add("show");
+  document.body.style.overflow = "hidden";
+}
+function closePIM() {
+  const bd = document.getElementById("pimBackdrop");
+  if (bd) bd.classList.remove("show");
+  document.body.style.overflow = "";
+}
+
 // ============ PRODUCT CARD ============
 function productCard(p, isFlash = false) {
   const pct = isFlash ? Math.round((p.stock/p.stockInit)*100) : null;
   const red = (p.oldPrice && p.price) ? Math.round(((p.oldPrice-p.price)/p.oldPrice)*100) : 0;
   const wa = (p.whatsapp || "").replace(/\D/g, "");
   const name = (p.name || p.title || "").replace(/"/g,"&quot;");
-  const pData = JSON.stringify({id:p.id,name:p.name||p.title||"",price:p.price,oldPrice:p.oldPrice||null,stock:p.stock||0,image:p.image||null,description:p.description||"",whatsapp:wa,emoji:p.emoji||"🛍️"}).replace(/'/g,"&#39;");
+  const pData = JSON.stringify({
+    id:p.id, name:p.name||p.title||"", price:p.price, oldPrice:p.oldPrice||null,
+    stock:p.stock||0, image:p.image||null, description:p.description||"",
+    whatsapp:wa, emoji:p.emoji||"🛍️", category:p.category||""
+  }).replace(/'/g,"&#39;");
   const imgSrc = p.image || null;
   const imgEl = imgSrc
-    ? `<img src="${imgSrc}" alt="${name}" loading="lazy" class="modal-img-zoom" onclick="event.stopPropagation();openLightbox('${imgSrc.replace(/'/g,"\\'")}','${name.replace(/'/g,"\\'")}');" title="Cliquer pour agrandir 🔍" />`
+    ? `<img src="${imgSrc}" alt="${name}" loading="lazy" class="modal-img-zoom"
+        onclick="event.stopPropagation();openProductImageModal(${pData})"
+        title="Voir la fiche produit 🔍" style="cursor:pointer" />`
     : `<span>${p.emoji||"🛍️"}</span>`;
-  return `<div class="pcard" onclick='openProductDetail(${pData})' style="cursor:pointer">
+  return `<div class="pcard" onclick='openProductImageModal(${pData})' style="cursor:pointer">
     <div class="pcard-img">
       ${imgEl}
       ${red > 0 ? `<span class="pcard-badge">-${red}%</span>` : ""}
