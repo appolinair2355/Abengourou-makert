@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ABENGOUROU-MARKET.CI — Marketplace d'Abengourou</title>
+<meta name="description" content="Plateforme numérique d'Abengourou : produits, immobilier, emplois, concours, transport, restaurants et plus." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css?v=4" />
+</head>
+<body>
+
+<!-- TOP STRIP -->
+<div class="top-strip">
+  <div class="container top-strip-inner">
+    <span>📍 Abengourou, Côte d'Ivoire &nbsp;|&nbsp; 🕐 Lun–Sam 08h–18h &nbsp;|&nbsp; 📞 <span id="headerPhone">+225 0767202271</span></span>
+    <div class="top-strip-right">
+      <a href="#" onclick="showText('apropos');return false">À propos</a>
+      <a href="#" onclick="showText('contact');return false">Contact</a>
+      <a href="#" onclick="showText('pub');return false">Publicité</a>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header id="mainHeader">
+  <div class="container header-inner">
+    <a href="#" class="logo-wrap" onclick="showHome();return false;">
+      <img src="/img/logo.png" alt="ABENGOUROU-MARKET" class="logo-img" />
+    </a>
+    <div class="search-wrap">
+      <select class="search-cat-sel" id="searchCat">
+        <option value="">Toutes catégories</option>
+        <option value="immobilier">Immobilier</option>
+        <option value="vehicules">Véhicules</option>
+        <option value="telephones">Téléphones</option>
+        <option value="mode">Mode</option>
+        <option value="emploi">Emploi</option>
+        <option value="services">Services</option>
+      </select>
+      <input id="searchInput" placeholder="Chercher un produit, emploi, terrain…" autocomplete="off" />
+      <button class="search-btn" onclick="doSearch()">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      </button>
+    </div>
+    <div class="header-actions">
+      <button class="hbtn hbtn-home" onclick="showHome()" title="Accueil">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span class="hbtn-lbl">Accueil</span>
+      </button>
+      <button class="hbtn hbtn-asst" id="assistantFab" title="Assistante IA">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="12" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="10" r="1" fill="currentColor"/></svg>
+        <span class="hbtn-lbl">Assistante</span>
+      </button>
+      <button class="hbtn hbtn-profil" onclick="openAccount()" title="Mon profil">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span class="hbtn-lbl">Profil</span>
+      </button>
+      <button class="hbtn hbtn-panier cart-btn" onclick="openCart()" title="Panier">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <span class="hbtn-lbl">Panier</span>
+        <span class="cart-badge" id="cartCount">0</span>
+      </button>
+      <button class="hbtn hbtn-menu menu-btn-mob" id="menuBtn" title="Menu">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <span class="hbtn-lbl">Menu</span>
+      </button>
+    </div>
+  </div>
+  <div class="flag-bar"></div>
+</header>
+
+<!-- NAV CATS (desktop) -->
+<nav class="cat-nav" id="catNav">
+  <div class="container cat-nav-inner">
+    <button class="cat-nav-all" id="menuBtn2">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      Toutes les catégories
+    </button>
+    <div class="cat-nav-links" id="catNavLinks"></div>
+  </div>
+</nav>
+
+<!-- mobile sidebar overlay -->
+<div class="mobile-sidebar" id="mobileSidebar" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="panel" id="mobileSidebarPanel"></div>
+</div>
+
+<main>
+
+<!-- ===== HOME ===== -->
+<div id="page-home" class="page-view active">
+<div class="container home-layout">
+
+  <!-- LEFT SIDEBAR -->
+  <aside class="sidebar" id="desktopSidebar"></aside>
+
+  <div class="home-main">
+    <!-- HERO BANNER CAROUSEL -->
+    <div class="hero-carousel" id="heroCarousel">
+      <div class="carousel-track" id="carouselTrack"></div>
+      <button class="car-btn car-prev" onclick="carMove(-1)">&#8249;</button>
+      <button class="car-btn car-next" onclick="carMove(1)">&#8250;</button>
+      <div class="car-dots" id="carDots"></div>
+    </div>
+
+    <!-- CATEGORY SHORTCUTS -->
+    <div class="shortcuts-wrap">
+      <div class="shortcuts" id="shortcuts"></div>
+    </div>
+
+    <!-- CITY BANNER -->
+    <div id="cityBanner"></div>
+
+    <!-- PAGE 2 : CONCOURS + ACTUALITÉS + EMPLOI -->
+    <section class="section-block page2-section">
+      <div class="page2-tabs">
+        <button class="page2-tab active" onclick="switchPage2Tab('concours',this)">📚 Concours CI</button>
+        <button class="page2-tab" onclick="switchPage2Tab('actualites',this)">📰 Actualités</button>
+        <button class="page2-tab" onclick="switchPage2Tab('emploi',this)">💼 Emploi</button>
+      </div>
+      <div id="page2Content">
+        <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+      </div>
+    </section>
+
+    <!-- OFFRES FLASH -->
+    <section class="section-block flash-section">
+      <div class="section-head">
+        <h2>⚡ Offres Flash du Jour</h2>
+        <a href="#" class="see-all" onclick="filterCat('');return false">Voir tout →</a>
+      </div>
+      <div class="products-grid" id="flashGrid"></div>
+    </section>
+
+    <!-- BOUTIQUE PAR CATÉGORIES -->
+    <section class="section-block">
+      <div class="section-head">
+        <h2>🛍️ Boutique en ligne</h2>
+        <small style="color:var(--muted);font-size:13px">Articles par catégorie</small>
+      </div>
+      <div id="shopGrid">
+        <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+      </div>
+    </section>
+
+    <!-- SERVICES -->
+    <section class="section-block">
+      <div class="section-head">
+        <h2>📋 Services</h2>
+        <small style="color:var(--muted);font-size:13px">Contact direct via WhatsApp</small>
+      </div>
+      <div id="servicesGrid">
+        <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+      </div>
+    </section>
+
+    <!-- IMMOBILIER -->
+    <section class="section-block">
+      <div class="section-head">
+        <h2>🏠 Immobilier</h2>
+        <a href="#" class="see-all" onclick="filterCat('immobilier');return false">Voir plus →</a>
+      </div>
+      <div class="products-grid" id="realGrid"></div>
+    </section>
+
+    <!-- TRANSPORT -->
+    <section class="section-block">
+      <div class="section-head">
+        <h2>🚕 Transport &amp; Taxi</h2>
+      </div>
+      <div class="transport-grid" id="transportGrid"></div>
+    </section>
+
+    <!-- RESTAURANTS -->
+    <section class="section-block">
+      <div class="section-head">
+        <h2>🍽️ Restaurants &amp; Livraison</h2>
+        <a href="#" class="see-all" onclick="filterCat('restaurants');return false">Voir plus →</a>
+      </div>
+      <div class="products-grid" id="restoGrid"></div>
+    </section>
+
+    <!-- RENCONTRES & AMITIÉS -->
+    <section class="section-block">
+      <div class="section-head">
+        <h2>❤️ Rencontres &amp; Amitiés</h2>
+        <a href="#" class="see-all" onclick="filterCat('rencontres');return false">Voir tous →</a>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Trouvez de nouvelles connaissances dans un cadre respectueux · <a href="#" onclick="openRencontreRegister();return false" style="color:#c2185b;font-weight:600">❤️ Créer mon profil</a></p>
+      <div class="rencontre-grid" id="rencontresGrid">
+        <div class="loading-placeholder"><div class="spinner"></div><p>Chargement…</p></div>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+
+<!-- TEXT PAGE -->
+<div id="page-text" class="page-view">
+  <div class="container">
+    <a class="back-link" href="#" onclick="showHome();return false;">← Retour à l'accueil</a>
+    <section class="section-block" id="textBody"></section>
+  </div>
+</div>
+
+<!-- CATEGORY PAGE -->
+<div id="page-category" class="page-view">
+  <div class="container">
+    <a class="back-link" href="#" onclick="showHome();return false;">← Retour à l'accueil</a>
+    <div id="catPageContent"></div>
+  </div>
+</div>
+
+<!-- VENDEUR DASHBOARD -->
+<div id="page-vendeur" class="page-view">
+  <div class="container">
+    <a class="back-link" href="#" onclick="showHome();return false;">← Retour à l'accueil</a>
+    <div class="dashboard-grid">
+      <div class="section-block">
+        <div class="dash-header">
+          <h2>Espace Vendeur</h2>
+          <p>Ajoutez un article — il sera validé par l'administrateur.</p>
+        </div>
+        <div id="subBanner" style="margin:12px 0"></div>
+        <form id="productForm" class="product-form">
+          <div class="form-row">
+            <div class="form-group"><label>Titre</label><input name="title" required placeholder="Ex: Téléphone Samsung A54  /  Comptable Sénior" /></div>
+            <div class="form-group"><label>Catégorie</label><select name="category" required id="catSelect" onchange="switchFormForCat(this)"></select></div>
+          </div>
+
+          <!-- SECTION : Article standard -->
+          <div class="pf-section pf-article">
+            <div class="form-row">
+              <div class="form-group"><label>Prix de vente (FCFA)</label><input name="price" type="number" placeholder="0" /></div>
+              <div class="form-group"><label>Ancien prix (optionnel)</label><input name="oldPrice" type="number" placeholder="0" /></div>
+              <div class="form-group"><label>Stock disponible</label><input name="stock" type="number" placeholder="1" /></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>N° WhatsApp vendeur</label><input name="whatsapp" placeholder="2250700000000" /></div>
+              <div class="form-group"><label>N° SMS commande</label><input name="personalPhone" placeholder="2250700000000" /></div>
+            </div>
+          </div>
+
+          <!-- SECTION : Services (Emploi / Concours / Annonces / Services) -->
+          <div class="pf-section pf-service" style="display:none">
+            <div class="service-hint">
+              <span>📢 Annonce service — les visiteurs vous contactent directement sur WhatsApp.</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>N° WhatsApp vendeur</label><input name="whatsapp" placeholder="2250700000000" /></div>
+            </div>
+            <input type="hidden" name="price" value="0" />
+            <input type="hidden" name="oldPrice" value="" />
+            <input type="hidden" name="stock" value="9999" />
+            <input type="hidden" name="personalPhone" value="" />
+          </div>
+
+          <div class="form-group" style="margin-top:8px">
+            <label>📷 Image (JPG, PNG, WebP, HEIC…)</label>
+            <input name="image" type="file" accept="image/*,image/heic,image/heif" class="img-file-input" onchange="previewImg(this)" />
+            <div class="img-preview-wrap" style="display:none">
+              <img class="img-preview" alt="Aperçu" />
+              <button type="button" class="img-preview-remove" onclick="removeImgPreview(this)">✕ Supprimer</button>
+            </div>
+          </div>
+          <div class="form-group"><label>Description / Détails</label><textarea name="description" rows="4" placeholder="Décrivez votre article, service ou offre…"></textarea></div>
+          <div class="form-group">
+            <label>⏱ Expiration de l'annonce</label>
+            <select name="expireHours">
+              <option value="0">Pas d'expiration</option>
+              <option value="24">24 heures</option>
+              <option value="72">3 jours</option>
+              <option value="168">7 jours</option>
+              <option value="336">15 jours</option>
+              <option value="720">30 jours</option>
+            </select>
+          </div>
+          <button type="submit" data-label="Publier l'article" class="btn btn-primary btn-lg">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Publier l'article
+          </button>
+        </form>
+      </div>
+      <div class="section-block">
+        <h3 class="sub-title">Mes articles publiés</h3>
+        <div id="myProducts" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN -->
+<div id="page-admin" class="page-view">
+  <div class="container">
+    <a class="back-link" href="#" onclick="showHome();return false;">← Retour à l'accueil</a>
+    <div class="section-block admin-wrap">
+      <div class="admin-header">
+        <img src="/img/logo.png" alt="logo" class="admin-logo" />
+        <div>
+          <h2>Tableau de bord Administrateur</h2>
+          <p>Gérez les vendeurs, articles, commandes et paramètres du marketplace.</p>
+        </div>
+      </div>
+      <div class="admin-tabs" id="adminTabs">
+        <button class="active" data-tab="vendors" onclick="adminTab('vendors')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Vendeurs
+        </button>
+        <button data-tab="products" onclick="adminTab('products')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>
+          Articles
+        </button>
+        <button data-tab="addproduct" onclick="adminTab('addproduct')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          Ajouter
+        </button>
+        <button data-tab="orders" onclick="adminTab('orders')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Commandes
+        </button>
+        <button data-tab="rencontres" onclick="adminTab('rencontres')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          Rencontres
+        </button>
+        <button data-tab="data" onclick="adminTab('data')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Données DB
+        </button>
+        <button data-tab="sms" onclick="adminTab('sms')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          SMS
+        </button>
+        <button data-tab="settings" onclick="adminTab('settings')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+          Paramètres
+        </button>
+      </div>
+      <div id="adminContent" class="admin-content"></div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-top">
+    <div class="container footer-grid">
+      <div class="footer-col footer-brand">
+        <img src="/img/logo.png" alt="ABENGOUROU-MARKET" class="footer-logo" />
+        <p>La plateforme numérique d'Abengourou.<br>Acheter, vendre, découvrir.</p>
+        <div class="social-links">
+          <a href="#" class="soc-fb" title="Facebook">f</a>
+          <a href="#" class="soc-wa" title="WhatsApp">W</a>
+          <a href="#" class="soc-tk" title="TikTok">Tk</a>
+          <a href="#" class="soc-ig" title="Instagram">Ig</a>
+          <a href="#" class="soc-yt" title="YouTube">Yt</a>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h4>Liens utiles</h4>
+        <ul>
+          <li><a href="#" onclick="showText('apropos');return false">À propos de nous</a></li>
+          <li><a href="#" onclick="showText('conditions');return false">Conditions d'utilisation</a></li>
+          <li><a href="#" onclick="showText('conf');return false">Confidentialité</a></li>
+          <li><a href="#" onclick="showText('contact');return false">Contact</a></li>
+          <li><a href="#" onclick="showText('pub');return false">Publicité</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Paiements acceptés</h4>
+        <div class="pay-badges">
+          <span class="pbadge wave">Wave</span>
+          <span class="pbadge orange">Orange Money</span>
+          <span class="pbadge mtn">MTN MoMo</span>
+          <span class="pbadge moov">Moov Money</span>
+        </div>
+        <div style="margin-top:12px;font-size:13px;opacity:.8">💵 Paiement à la livraison disponible</div>
+      </div>
+      <div class="footer-col">
+        <h4>Service client</h4>
+        <ul>
+          <li>📞 <span id="footerPhone">+225 0767202271</span></li>
+          <li>📧 <span id="footerEmail">contact@abengourou-market.com</span></li>
+          <li>📍 Abengourou, Côte d'Ivoire</li>
+          <li style="margin-top:8px;opacity:.7">Lun – Sam · 08h00 à 18h00</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="container">
+      <span>© <span id="yr"></span> ABENGOUROU-MARKET.CI. Tous droits réservés.</span>
+      <span>Fait avec ❤️ à Abengourou, Côte d'Ivoire 🇨🇮</span>
+    </div>
+  </div>
+</footer>
+
+<!-- MODAL -->
+<div class="modal-back" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<!-- ===== ASSISTANTE IA ===== -->
+<div id="assistantWindow">
+  <div class="asst-header">
+    <div class="asst-header-info">
+      <div class="asst-avatar">🤖</div>
+      <div>
+        <div class="asst-title">Assistante ABENGOUROU-MARKET</div>
+        <div class="asst-subtitle">En ligne · Répond en quelques secondes</div>
+      </div>
+    </div>
+    <button id="assistantClose" class="asst-close" title="Fermer">✕</button>
+  </div>
+  <div id="assistantMessages" class="asst-messages"></div>
+  <div class="asst-input-wrap">
+    <textarea id="assistantInput" class="asst-input" rows="1" placeholder="Posez votre question…"></textarea>
+    <button id="assistantSend" class="asst-send">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</div>
+
+<script src="/app.js?v=4"></script>
+</body>
+</html>
