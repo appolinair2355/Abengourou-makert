@@ -351,7 +351,9 @@ function infoCard(p) {
 }
 
 function openInfoDetail(p) {
-  const img = p.image ? `<img src="${p.image}" alt="${p.title}" style="width:100%;max-height:240px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px" />` : "";
+  const imgSrc = p.image || null;
+  const imgAlt = (p.title||"").replace(/"/g,"&quot;");
+  const img = imgSrc ? `<img src="${imgSrc}" alt="${imgAlt}" class="modal-img-zoom" onclick="openLightbox('${imgSrc.replace(/'/g,"\\'")}','${imgAlt.replace(/'/g,"\\'")}');event.stopPropagation()" style="width:100%;max-height:240px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px;display:block" title="Cliquer pour agrandir 🔍" />` : "";
   const catLabel = CATEGORIES.find(c=>c[0]===p.category)?.[2] || p.category;
   const catIcon = CATEGORIES.find(c=>c[0]===p.category)?.[1] || "📋";
   modalHTML(`
@@ -367,13 +369,17 @@ function openInfoDetail(p) {
 // ============ WHATSAPP ONLY CARD (Annonces / Services / Immobilier) ============
 function waOnlyCard(p) {
   const wa = (p.whatsapp || "").replace(/\D/g, "");
-  const img = p.image ? `<img src="${p.image}" alt="${p.title||p.name}" loading="lazy" />` : `<span>${p.emoji||"📢"}</span>`;
   const name = p.name || p.title || "";
   const desc = (p.description || "").trim();
   const pData = JSON.stringify({id:p.id,name,description:desc,image:p.image||null,whatsapp:wa,category:p.category||""}).replace(/'/g,"&#39;");
   const msg = encodeURIComponent(`Bonjour, je suis intéressé par : ${name}`);
+  const imgSrc = p.image || null;
+  const nameSafe = name.replace(/'/g,"\\'");
+  const imgEl = imgSrc
+    ? `<img src="${imgSrc}" alt="${name}" loading="lazy" class="modal-img-zoom" onclick="event.stopPropagation();openLightbox('${imgSrc.replace(/'/g,"\\'")}','${nameSafe}')" title="Cliquer pour agrandir 🔍" />`
+    : `<span>${p.emoji||"📢"}</span>`;
   return `<div class="pcard" onclick='openWaDetail(${pData})' style="cursor:pointer">
-    <div class="pcard-img">${img}</div>
+    <div class="pcard-img">${imgEl}</div>
     <div class="pcard-body">
       <div class="pcard-name">${name}</div>
       ${desc ? `<div class="pcard-stock" style="color:var(--muted);font-size:12px;margin-bottom:8px">${desc.slice(0,60)}${desc.length>60?"…":""}</div>` : ""}
@@ -386,7 +392,9 @@ function waOnlyCard(p) {
 
 function openWaDetail(p) {
   const wa = (p.whatsapp || "").replace(/\D/g, "");
-  const img = p.image ? `<img src="${p.image}" alt="${p.name}" style="width:100%;max-height:260px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px" />` : "";
+  const imgSrc = p.image || null;
+  const imgAlt = (p.name||"").replace(/"/g,"&quot;");
+  const img = imgSrc ? `<img src="${imgSrc}" alt="${imgAlt}" class="modal-img-zoom" onclick="openLightbox('${imgSrc.replace(/'/g,"\\'")}','${imgAlt.replace(/'/g,"\\'")}');event.stopPropagation()" style="width:100%;max-height:260px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px;display:block" title="Cliquer pour agrandir 🔍" />` : "";
   const msg = encodeURIComponent(`Bonjour, je suis intéressé par : ${p.name}`);
   modalHTML(`
     <h2 style="font-size:17px;margin-bottom:4px">${p.name} <button class="modal-close" onclick="closeModal()">✕</button></h2>
@@ -401,14 +409,18 @@ function openWaDetail(p) {
 // ============ RESERVE CARD (Résidences — Réserver + WhatsApp) ============
 function reserveCard(p) {
   const wa = (p.whatsapp || "").replace(/\D/g, "");
-  const img = p.image ? `<img src="${p.image}" alt="${p.title||p.name}" loading="lazy" />` : `<span>🏡</span>`;
   const name = p.name || p.title || "";
   const desc = (p.description || "").trim();
   const pData = JSON.stringify({id:p.id,name,description:desc,image:p.image||null,whatsapp:wa,category:p.category||""}).replace(/'/g,"&#39;");
   const msgReserve = encodeURIComponent(`Bonjour, je souhaite réserver : ${name}`);
   const msgContact = encodeURIComponent(`Bonjour, je suis intéressé(e) par : ${name}`);
+  const imgSrc = p.image || null;
+  const nameSafe = name.replace(/'/g,"\\'");
+  const imgEl = imgSrc
+    ? `<img src="${imgSrc}" alt="${name}" loading="lazy" class="modal-img-zoom" onclick="event.stopPropagation();openLightbox('${imgSrc.replace(/'/g,"\\'")}','${nameSafe}')" title="Cliquer pour agrandir 🔍" />`
+    : `<span>🏡</span>`;
   return `<div class="pcard" onclick='openWaDetail(${pData})' style="cursor:pointer">
-    <div class="pcard-img">${img}</div>
+    <div class="pcard-img">${imgEl}</div>
     <div class="pcard-body">
       <div class="pcard-name">${name}</div>
       ${p.price > 0 ? `<div class="pcard-price">${fmt(p.price)}</div>` : ""}
@@ -471,17 +483,43 @@ function orderViaWhatsapp(wa, name) {
   waOpen(wa, encodeURIComponent("Bonjour, je suis intéressé par : " + name), name);
 }
 
+// ============ LIGHTBOX IMAGE ============
+(function() {
+  const lb = document.createElement("div");
+  lb.className = "lightbox-back";
+  lb.innerHTML = '<span class="lightbox-close" onclick="closeLightbox()">✕</span><img id="lbImg" src="" alt="" />';
+  lb.addEventListener("click", function(e) { if (e.target === lb) closeLightbox(); });
+  document.addEventListener("keydown", function(e) { if (e.key === "Escape") closeLightbox(); });
+  document.body.appendChild(lb);
+})();
+function openLightbox(src, alt) {
+  const lb = document.querySelector(".lightbox-back");
+  if (!lb) return;
+  lb.querySelector("#lbImg").src = src;
+  lb.querySelector("#lbImg").alt = alt || "";
+  lb.classList.add("show");
+  document.body.style.overflow = "hidden";
+}
+function closeLightbox() {
+  const lb = document.querySelector(".lightbox-back");
+  if (lb) lb.classList.remove("show");
+  document.body.style.overflow = "";
+}
+
 // ============ PRODUCT CARD ============
 function productCard(p, isFlash = false) {
   const pct = isFlash ? Math.round((p.stock/p.stockInit)*100) : null;
   const red = (p.oldPrice && p.price) ? Math.round(((p.oldPrice-p.price)/p.oldPrice)*100) : 0;
-  const img = p.image ? `<img src="${p.image}" alt="${p.name||p.title}" loading="lazy" />` : `<span>${p.emoji||"🛍️"}</span>`;
   const wa = (p.whatsapp || "").replace(/\D/g, "");
   const name = (p.name || p.title || "").replace(/"/g,"&quot;");
   const pData = JSON.stringify({id:p.id,name:p.name||p.title||"",price:p.price,oldPrice:p.oldPrice||null,stock:p.stock||0,image:p.image||null,description:p.description||"",whatsapp:wa,emoji:p.emoji||"🛍️"}).replace(/'/g,"&#39;");
+  const imgSrc = p.image || null;
+  const imgEl = imgSrc
+    ? `<img src="${imgSrc}" alt="${name}" loading="lazy" class="modal-img-zoom" onclick="event.stopPropagation();openLightbox('${imgSrc.replace(/'/g,"\\'")}','${name.replace(/'/g,"\\'")}');" title="Cliquer pour agrandir 🔍" />`
+    : `<span>${p.emoji||"🛍️"}</span>`;
   return `<div class="pcard" onclick='openProductDetail(${pData})' style="cursor:pointer">
     <div class="pcard-img">
-      ${img}
+      ${imgEl}
       ${red > 0 ? `<span class="pcard-badge">-${red}%</span>` : ""}
       <span class="pcard-wish">♡</span>
     </div>
@@ -499,7 +537,9 @@ function productCard(p, isFlash = false) {
 
 function openProductDetail(p) {
   const wa = (p.whatsapp || "").replace(/\D/g, "");
-  const img = p.image ? `<img src="${p.image}" alt="${p.name}" style="width:100%;max-height:260px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px" />` : "";
+  const imgSrc = p.image || null;
+  const imgAlt = (p.name||"").replace(/"/g,"&quot;");
+  const img = imgSrc ? `<img src="${imgSrc}" alt="${imgAlt}" class="modal-img-zoom" onclick="openLightbox('${imgSrc.replace(/'/g,"\\'")}','${imgAlt.replace(/'/g,"\\'")}');event.stopPropagation()" style="width:100%;max-height:260px;object-fit:cover;border-radius:var(--radius);margin-bottom:14px;display:block" title="Cliquer pour agrandir 🔍" />` : "";
   const desc = (p.description || "").trim();
   const nameSafe = (p.name||"").replace(/'/g,"");
   modalHTML(`
@@ -2557,8 +2597,8 @@ async function adminTab(which) {
             ? `<span class="status-badge status-ok">✓ Approuvé</span>`
             : `<span class="status-badge status-wait">⏳ En attente</span>`;
           const photoHtml = p.photo
-            ? `<img src="${p.photo}" style="width:44px;height:44px;object-fit:cover;border-radius:50%;border:2px solid #c2185b;flex-shrink:0" />`
-            : `<div style="width:44px;height:44px;background:#fce4ec;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">❤️</div>`;
+            ? `<img src="${p.photo}" onclick="openLightbox('${p.photo.replace(/'/g,"\\'")}','${(p.nom||"").replace(/'/g,"\\'")} ${(p.prenom||"").replace(/'/g,"\\'")}')" class="modal-img-zoom" style="width:64px;height:64px;object-fit:cover;border-radius:50%;border:3px solid #c2185b;flex-shrink:0;cursor:zoom-in" title="Cliquer pour voir la photo en taille réelle 🔍" />`
+            : `<div style="width:64px;height:64px;background:#fce4ec;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">❤️</div>`;
           const sousLabel = RENCONTRE_SOUS[p.souscat] || p.souscat;
           return `<div class="admin-row">
             <div class="admin-row-head">
@@ -2574,7 +2614,7 @@ async function adminTab(which) {
               ${st}
             </div>
             <div class="admin-row-actions">
-              ${!p.approved ? `<button class="btn btn-secondary btn-sm" onclick="askApproveRencontre(${p.id},${p.prixAcces||500},'${p.souscat||"amitie"}')">✓ Approuver &amp; définir le prix</button>` : ""}
+              ${!p.approved ? `<button class="btn btn-secondary btn-sm" onclick="askApproveRencontre(${p.id},${p.prixAcces||500},'${p.souscat||"amitie"}',${p.photo ? `'${p.photo.replace(/'/g,"\\'")}'` : "null"})">✓ Approuver &amp; définir le prix</button>` : ""}
               <button class="btn btn-danger btn-sm" onclick="deleteRencontre(${p.id})">Supprimer</button>
             </div>
           </div>`;
@@ -2882,19 +2922,18 @@ async function adminTab(which) {
           <div class="settings-section-title" style="background:linear-gradient(135deg,#4a148c,#7b1fa2)">🤖 Assistante IA — Configuration</div>
           <p class="form-hint" style="margin-bottom:14px">L'assistante utilise <strong>Groq</strong> (clé configurée sur le serveur) en priorité. Si le quota Groq est expiré, renseignez une clé de secours compatible OpenAI ci-dessous et cliquez <strong>Enregistrer la clé IA</strong>.</p>
           <div class="form-group">
-            <label>🔑 Clé API de secours</label>
-            <input id="setAiKey" value="${s.aiApiKey || ""}" placeholder="gsk_... ou fe_oa_..." style="font-family:monospace" />
-            <div class="form-hint">Groq : commence par <code>gsk_</code> — Featherless : commence par <code>fe_oa_</code>. Laissez vide pour utiliser uniquement la clé serveur.</div>
+            <label>🔑 Clé API</label>
+            <input id="setAiKey" value="${s.aiApiKey || ""}" placeholder="gsk_... (Groq) ou fe_oa_... (Featherless)" style="font-family:monospace" oninput="autoFillAiFields(this.value)" />
+            <div id="aiKeyBadge" style="margin-top:6px;font-size:12px;font-weight:600"></div>
+            <div class="form-hint">La clé est détectée automatiquement — l'endpoint et le modèle se remplissent seuls.</div>
           </div>
           <div class="form-group" style="margin-top:12px">
-            <label>🌐 Endpoint API (URL complète)</label>
-            <input id="setAiEndpoint" value="${s.aiEndpoint || ""}" placeholder="https://api.groq.com/openai/v1/chat/completions" />
-            <div class="form-hint">Groq : <code>https://api.groq.com/openai/v1/chat/completions</code> — Laissez vide pour utiliser Groq par défaut.</div>
+            <label>🌐 Endpoint API <small style="font-weight:normal;color:var(--muted)">(rempli automatiquement)</small></label>
+            <input id="setAiEndpoint" value="${s.aiEndpoint || ""}" placeholder="Rempli automatiquement selon la clé" style="color:var(--muted)" />
           </div>
           <div class="form-group" style="margin-top:12px">
-            <label>🤖 Modèle IA</label>
-            <input id="setAiModel" value="${s.aiModel || ""}" placeholder="llama-3.3-70b-versatile" />
-            <div class="form-hint">Groq : <code>llama-3.3-70b-versatile</code> — Laissez vide pour utiliser le modèle par défaut.</div>
+            <label>🤖 Modèle IA <small style="font-weight:normal;color:var(--muted)">(rempli automatiquement)</small></label>
+            <input id="setAiModel" value="${s.aiModel || ""}" placeholder="Rempli automatiquement selon la clé" style="color:var(--muted)" />
           </div>
           <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <button class="btn btn-primary" style="background:linear-gradient(135deg,#4a148c,#7b1fa2);min-width:200px" onclick="saveAiKey()">
@@ -3060,9 +3099,16 @@ async function compressDbImages() {
   }
 }
 
-function askApproveRencontre(id, prixCurrent, souscat) {
+function askApproveRencontre(id, prixCurrent, souscat, photoSrc) {
+  const photoHtml = photoSrc
+    ? `<div style="text-align:center;margin-bottom:16px">
+        <img src="${photoSrc}" onclick="openLightbox('${photoSrc.replace(/'/g,"\\'")}','Photo du profil')" class="modal-img-zoom" style="max-width:100%;max-height:260px;object-fit:contain;border-radius:var(--radius);cursor:zoom-in;border:2px solid #c2185b" title="Cliquer pour voir en taille réelle 🔍" />
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">🔍 Cliquer sur la photo pour l'agrandir</div>
+      </div>`
+    : `<div style="text-align:center;padding:20px;background:#fce4ec;border-radius:var(--radius);margin-bottom:16px;font-size:32px">❤️<br><span style="font-size:12px;color:#c2185b">Aucune photo fournie</span></div>`;
   modalHTML(`
     <h2>✓ Approuver le profil <button class="modal-close" onclick="closeModal()">✕</button></h2>
+    ${photoHtml}
     <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Définissez le prix d'accès et le type de rencontre avant de publier ce profil.</p>
     <div class="form-group">
       <label>💰 Prix d'accès au profil (FCFA)</label>
@@ -3269,15 +3315,40 @@ function toggleCatPrice(slug) {
 }
 
 
+// Auto-détecte le type de clé et remplit endpoint + modèle
+function autoFillAiFields(keyVal) {
+  const key = (keyVal || "").trim();
+  const ep  = document.getElementById("setAiEndpoint");
+  const mdl = document.getElementById("setAiModel");
+  const badge = document.getElementById("aiKeyBadge");
+  if (!ep || !mdl) return;
+  if (key.startsWith("gsk_")) {
+    ep.value  = "https://api.groq.com/openai/v1/chat/completions";
+    mdl.value = "llama-3.3-70b-versatile";
+    if (badge) badge.innerHTML = '<span style="color:#7b1fa2">⚡ Groq détecté — endpoint et modèle mis à jour automatiquement</span>';
+  } else if (key.startsWith("fe_oa_")) {
+    ep.value  = "https://api.featherless.ai/v1/chat/completions";
+    mdl.value = "meta-llama/Meta-Llama-3.1-8B-Instruct";
+    if (badge) badge.innerHTML = '<span style="color:#1565c0">🔵 Featherless détecté — endpoint et modèle mis à jour automatiquement</span>';
+  } else if (!key) {
+    if (badge) badge.innerHTML = '<span style="color:var(--muted)">Clé par défaut active (Featherless intégré)</span>';
+  } else {
+    if (badge) badge.innerHTML = '<span style="color:var(--muted)">Clé personnalisée — vérifiez l\'endpoint manuellement</span>';
+  }
+}
+
 async function saveAiKey() {
-  const key      = document.getElementById("setAiKey")?.value?.trim()      || "";
+  const key = document.getElementById("setAiKey")?.value?.trim() || "";
+  // Forcer les bons endpoint/modèle selon le type de clé avant envoi
+  autoFillAiFields(key);
   const endpoint = document.getElementById("setAiEndpoint")?.value?.trim() || "";
   const model    = document.getElementById("setAiModel")?.value?.trim()    || "";
   const msgEl    = document.getElementById("aiKeyMsg");
 
-  if (msgEl) { msgEl.textContent = "Enregistrement…"; msgEl.style.color = "var(--muted)"; }
+  if (msgEl) { msgEl.innerHTML = "<span style='color:var(--muted)'>💾 Enregistrement…</span>"; }
 
   try {
+    // 1. Sauvegarder la clé
     const resp = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3285,11 +3356,34 @@ async function saveAiKey() {
     });
     const d = await resp.json();
     if (!resp.ok || d.error) throw new Error(d.error || `HTTP ${resp.status}`);
-    if (msgEl) { msgEl.textContent = "✓ Clé IA enregistrée !"; msgEl.style.color = "var(--secondary)"; }
-    toast("Clé IA enregistrée ✓", "green");
-    setTimeout(() => { if (msgEl) msgEl.textContent = ""; }, 4000);
+
+    // 2. Tester la clé si fournie
+    if (key) {
+      if (msgEl) { msgEl.innerHTML = "<span style='color:var(--muted)'>🔍 Vérification de la clé…</span>"; }
+      try {
+        const testResp = await fetch("/api/ai/test-key", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: key, endpoint, model })
+        });
+        const testData = await testResp.json();
+        if (testData.ok) {
+          if (msgEl) { msgEl.innerHTML = `<span style='color:var(--secondary)'>✅ Clé valide — modèle : <strong>${testData.model}</strong></span>`; }
+          toast("Clé IA valide et enregistrée ✓", "green");
+        } else {
+          if (msgEl) { msgEl.innerHTML = `<span style='color:#e65100'>⚠️ Clé enregistrée mais : <strong>${testData.error}</strong></span>`; }
+          toast("Clé enregistrée — mais erreur : " + testData.error, "red");
+        }
+      } catch {
+        if (msgEl) { msgEl.innerHTML = "<span style='color:var(--secondary)'>✓ Clé enregistrée (test réseau impossible)</span>"; }
+      }
+    } else {
+      if (msgEl) { msgEl.innerHTML = "<span style='color:var(--secondary)'>✓ Paramètres IA enregistrés (clé par défaut active)</span>"; }
+      toast("Paramètres IA enregistrés ✓", "green");
+    }
+    setTimeout(() => { if (msgEl) msgEl.innerHTML = ""; }, 6000);
   } catch (e) {
-    if (msgEl) { msgEl.textContent = "✗ Échec : " + e.message; msgEl.style.color = "var(--danger)"; }
+    if (msgEl) { msgEl.innerHTML = `<span style='color:var(--danger)'>✗ Échec : ${e.message}</span>`; }
     toast("Erreur lors de la sauvegarde", "red");
   }
 }
