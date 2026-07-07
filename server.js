@@ -15,13 +15,8 @@ const PORT = process.env.PORT || 5000;
 const ADMIN_ID  = "buzz";
 const ADMIN_PWD = "arrow";
 
-// ─── Connexion PostgreSQL ────────────────────────────────────────────────────
-// DATABASE_URL est fournie automatiquement par l'hébergeur (Replit, Render, Railway…)
-const dbUrl = process.env.DATABASE_URL;
-if (!dbUrl) {
-  console.error("❌ DATABASE_URL manquant — définissez cette variable d'environnement.");
-  process.exit(1);
-}
+const dbUrl = process.env.DATABASE_URL ||
+  "postgresql://boutique_en_ligne_user:28HKostTV7XpwU2nVso0cKbQwd1avOBn@dpg-d8pq2337uimc73aedqog-a.oregon-postgres.render.com/boutique_en_ligne";
 
 const isLocalDB = dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1");
 const pool = new Pool({
