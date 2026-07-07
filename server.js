@@ -566,7 +566,7 @@ app.post("/api/products", async (req, res) => {
       try {
         const raw = imgData.replace(/^data:image\/\w+;base64,/, "");
         const buf = Buffer.from(raw, "base64");
-        const out = await sharp(buf).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+        const out = await sharp(buf).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
         imgData = "data:image/jpeg;base64," + out.toString("base64");
       } catch { /* garder l'image originale si erreur */ }
     }
@@ -797,7 +797,7 @@ app.post("/api/rencontres", async (req, res) => {
       try {
         const raw = photoData.replace(/^data:image\/\w+;base64,/, "");
         const buf = Buffer.from(raw, "base64");
-        const out = await sharp(buf).resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+        const out = await sharp(buf).resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 92 }).toBuffer();
         photoData = "data:image/jpeg;base64," + out.toString("base64");
       } catch { /* garder la photo originale si erreur */ }
     }
@@ -1322,8 +1322,8 @@ app.get("/api/admin/export/zip", async (req, res) => {
       "ADMIN_ID=buzz",
       "ADMIN_PWD=arrow",
       "",
-      "# Port du serveur (optionnel — défaut : 5000)",
-      "PORT=5000",
+      "# Port du serveur (Render.com utilise 10000 par défaut)",
+      "PORT=10000",
     ].join("\n");
     zip.addFile(".env.example", Buffer.from(envExample, "utf8"));
 
@@ -1389,6 +1389,47 @@ app.post("/api/sante/garde/delete", async (req, res) => {
 });
 
 // ─── IA — Cerveau (Brain) CRUD ────────────────────────────────────────────────
+// ─── Test validité clé IA ───────────────────────────────────────────────────
+app.post("/api/ai/test-key", async (req, res) => {
+  try {
+    const { apiKey, endpoint, model } = req.body || {};
+    if (!apiKey) return res.json({ ok: false, error: "Clé vide" });
+    // La détection du type de clé prime toujours sur l'endpoint fourni
+    const isGroq   = apiKey.startsWith("gsk_");
+    const isFeather = apiKey.startsWith("fe_oa_");
+    const url = isGroq
+      ? "https://api.groq.com/openai/v1/chat/completions"
+      : (isFeather
+        ? "https://api.featherless.ai/v1/chat/completions"
+        : (endpoint || "https://api.featherless.ai/v1/chat/completions"));
+    const mdl = isGroq
+      ? "llama-3.3-70b-versatile"
+      : (isFeather
+        ? (model || "meta-llama/Meta-Llama-3.1-8B-Instruct")
+        : (model || "meta-llama/Meta-Llama-3.1-8B-Instruct"));
+    const testRes  = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: mdl,
+        messages: [{ role: "user", content: "Réponds juste OK" }],
+        max_tokens: 5,
+        temperature: 0
+      })
+    });
+    const txt = await testRes.text();
+    if (testRes.status === 401) return res.json({ ok: false, error: "Clé invalide ou non autorisée" });
+    if (testRes.status === 429) return res.json({ ok: false, error: "Quota épuisé — limite de requêtes atteinte" });
+    if (testRes.status === 402) return res.json({ ok: false, error: "Quota épuisé — solde insuffisant" });
+    if (!testRes.ok)            return res.json({ ok: false, error: `Erreur ${testRes.status}` });
+    const data = JSON.parse(txt);
+    const reply = data.choices?.[0]?.message?.content?.trim() || "OK";
+    return res.json({ ok: true, reply, model: mdl });
+  } catch (e) {
+    return res.json({ ok: false, error: e.message });
+  }
+});
+
 app.get("/api/ai/brain", async (_req, res) => {
   try {
     const { rows } = await pool.query("SELECT * FROM ai_brain ORDER BY created_at DESC");
@@ -1439,13 +1480,16 @@ app.post("/api/ai/chat", async (req, res) => {
       if (matches / entryWords.length >= 0.6) return res.json({ reply: entry.answer, source: "brain" });
     }
 
-    // 2. Appel API IA — Groq en priorité (GROQ_API_KEY), sinon configurable par l'admin
-    const groqKey = process.env.GROQ_API_KEY;
-    const apiKey   = groqKey || settings.aiApiKey || "";
-    const endpoint = groqKey
+    // 2. Appel API IA — Groq en priorité (GROQ_API_KEY env var ou clé gsk_ admin), sinon clé admin
+    const groqKey      = process.env.GROQ_API_KEY || "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";
+    const configuredKey = settings.aiApiKey || "";
+    const isGroqKey    = (k) => k && k.startsWith("gsk_");
+    const usingGroq    = !!(groqKey || isGroqKey(configuredKey));
+    const apiKey       = groqKey || configuredKey || "";
+    const endpoint     = usingGroq
       ? "https://api.groq.com/openai/v1/chat/completions"
       : (settings.aiEndpoint || "https://api.featherless.ai/v1/chat/completions");
-    const model = groqKey
+    const model        = usingGroq
       ? "llama-3.3-70b-versatile"
       : (settings.aiModel || "meta-llama/Meta-Llama-3.1-8B-Instruct");
 
@@ -1566,29 +1610,31 @@ app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.h
 async function autoCompressImages() {
   try {
     const tables = [
-      { table: "products",   col: "image", pk: "id", w: 800 },
-      { table: "rencontres", col: "photo", pk: "id", w: 400 },
+      { table: "products",   col: "image", pk: "id", w: 800, q: 90 },
+      { table: "rencontres", col: "photo", pk: "id", w: 400, q: 92 },
     ];
-    let total = 0, done = 0;
-    for (const { table, col, pk, w } of tables) {
+    let total = 0, done = 0, skipped = 0;
+    for (const { table, col, pk, w, q } of tables) {
       const { rows } = await pool.query(
         `SELECT ${pk}, ${col} FROM ${table} WHERE ${col} IS NOT NULL AND ${col} LIKE 'data:%'`
       );
       for (const row of rows) {
+        total++;
         try {
           const raw = row[col].replace(/^data:image\/\w+;base64,/, "");
           const buf = Buffer.from(raw, "base64");
-          // Toujours recompresser (pas de condition sur la taille)
-          const out = await sharp(buf).resize({ width: w, withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+          // Ne recompresser que si l'image est encore trop large (évite la dégradation en chaîne)
+          const meta = await sharp(buf).metadata();
+          if (meta.width && meta.width <= w) { skipped++; continue; }
+          const out = await sharp(buf).resize({ width: w, withoutEnlargement: true }).jpeg({ quality: q }).toBuffer();
           const newB64 = "data:image/jpeg;base64," + out.toString("base64");
           await pool.query(`UPDATE ${table} SET ${col}=$1 WHERE ${pk}=$2`, [newB64, row[pk]]);
           done++;
-          total++;
-        } catch { total++; }
+        } catch { /* ne bloque pas */ }
       }
     }
-    if (total > 0) console.log(`🖼️  Images recompressées (85%, ${done}/${total})`);
-    else console.log("🖼️  Aucune image data:// à compresser dans la DB.");
+    if (done > 0) console.log(`🖼️  Images recompressées (${done}/${total}, ${skipped} déjà optimisées)`);
+    else console.log(`🖼️  Aucune image à recompresser (${skipped} déjà optimisées).`);
   } catch (e) {
     console.error("⚠️  Compression images (non bloquant) :", e.message);
   }

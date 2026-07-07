@@ -10,6 +10,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "adm-zip": "^0.5.18",
     "express": "^4.19.2",
     "express-session": "^1.19.0",
     "ikoddi-client-sdk": "^1.1.5",
@@ -19,7 +20,6 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "adm-zip": "^0.5.18",
     "archiver": "^8.0.0"
   }
 }
