@@ -9,6 +9,7 @@ const multer = require("multer");
 const { Ikoddi } = require("ikoddi-client-sdk");
 const sharp = require("sharp");
 
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -102,6 +103,7 @@ async function initDB() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_api_key TEXT DEFAULT 'fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_endpoint TEXT DEFAULT 'https://api.featherless.ai/v1/chat/completions';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'meta-llama/Meta-Llama-3.1-8B-Instruct';
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS image_signed BOOLEAN DEFAULT FALSE;
 
     CREATE TABLE IF NOT EXISTS ai_brain (
       id         BIGSERIAL PRIMARY KEY,
@@ -342,6 +344,7 @@ app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
+
 // ─── Auth ────────────────────────────────────────────────────────────────────
 app.post("/api/login", async (req, res) => {
   try {
@@ -560,14 +563,19 @@ app.post("/api/products", async (req, res) => {
       autoApprove = vRows[0] ? vendorActive(vRows[0]) : false;
     }
 
-    // Compression de l'image à 45 % à l'upload
+    // Compression à l'upload — catégories lourdes (concours, emploi, actualités, événements) à 50 %
+    const HEAVY_CATS = ["concours-ci","emploi","actualites","evenements"];
     let imgData = b.image || null;
     if (imgData && imgData.startsWith("data:image")) {
       try {
         const raw = imgData.replace(/^data:image\/\w+;base64,/, "");
-        const buf = Buffer.from(raw, "base64");
-        const out = await sharp(buf).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
-        imgData = "data:image/jpeg;base64," + out.toString("base64");
+        let buf = Buffer.from(raw, "base64");
+        const isHeavy = HEAVY_CATS.includes(b.category || "");
+        buf = await sharp(buf)
+          .resize({ width: isHeavy ? 300 : 800, withoutEnlargement: true })
+          .jpeg({ quality: isHeavy ? 50 : 90 })
+          .toBuffer();
+        imgData = "data:image/jpeg;base64," + buf.toString("base64");
       } catch { /* garder l'image originale si erreur */ }
     }
 
@@ -1640,10 +1648,44 @@ async function autoCompressImages() {
   }
 }
 
+// ─── Compression initiale des catégories lourdes (concours, emploi, actualités, événements) ──
+async function autoCompressHeavyCategories() {
+  const HEAVY = ["concours-ci","emploi","actualites","evenements"];
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, image FROM products
+       WHERE category = ANY($1) AND image IS NOT NULL AND image LIKE 'data:%'`,
+      [HEAVY]
+    );
+    if (!rows.length) { console.log("🗜️  Catégories lourdes : aucune image à recompresser."); return; }
+    let done = 0, skipped = 0;
+    for (const p of rows) {
+      try {
+        const raw = p.image.replace(/^data:image\/\w+;base64,/, "");
+        const buf = Buffer.from(raw, "base64");
+        const meta = await sharp(buf).metadata();
+        // Ne recompresser que si la qualité est encore élevée (image > 80 Ko)
+        if (buf.length < 80_000) { skipped++; continue; }
+        const out = await sharp(buf)
+          .resize({ width: 300, withoutEnlargement: true })
+          .jpeg({ quality: 50 })
+          .toBuffer();
+        const newB64 = "data:image/jpeg;base64," + out.toString("base64");
+        await pool.query("UPDATE products SET image=$1 WHERE id=$2", [newB64, p.id]);
+        done++;
+      } catch { /* ne bloque pas */ }
+    }
+    console.log(`🗜️  Catégories lourdes : ${done} recompressées, ${skipped} déjà légères.`);
+  } catch (e) {
+    console.error("⚠️  Compression catégories lourdes (non bloquant) :", e.message);
+  }
+}
+
 // ─── Démarrage ────────────────────────────────────────────────────────────────
 initDB()
   .then(() => app.listen(PORT, "0.0.0.0", () => {
     console.log(`ABENGOUROU-MARKET sur http://0.0.0.0:${PORT}`);
-    autoCompressImages(); // arrière-plan — ne bloque pas le démarrage
+    autoCompressImages();           // arrière-plan — compression générale
+    autoCompressHeavyCategories();  // compression 50 % catégories lourdes
   }))
   .catch((err) => { console.error("❌ Erreur DB:", err.message); process.exit(1); });
