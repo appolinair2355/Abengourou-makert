@@ -42,6 +42,7 @@ const BANNERS = [
 let RENCONTRES_WA = "2250767202271";
 let CAT_CONFIG = {}; // Config gratuit/payant par catégorie, chargée depuis les paramètres
 let CABINE_PAYMENT_LINK = "https://pay.wave.com/m/M_ci_CRgdcq5dsx3B/c/ci/";
+const RENCONTRES_WAVE_LINK = "https://pay.wave.com/m/M_ci_CRgdcq5dsx3B/c/ci/?amount=505";
 
 // Catégories standard (peuvent être gratuites ou payantes)
 const CONFIG_CATS = [
@@ -549,6 +550,9 @@ function openProductImageModal(p) {
         ${stockHtml}
       </div>
       ${desc ? `<div class="pim-desc">${desc}</div>` : ""}
+      <div style="margin-top:10px;padding:8px 10px;background:#f0f4ff;border-radius:8px;font-size:12px;color:#1565c0;text-align:center">
+        🌐 <a href="${window.location.origin}" target="_blank" style="color:#1565c0;font-weight:600;text-decoration:none">${window.location.hostname}</a>
+      </div>
     </div>
     <div class="pim-actions">
       <button class="btn btn-ghost" onclick="closePIM()">✕ Fermer</button>
@@ -566,6 +570,11 @@ function closePIM() {
 }
 
 // ============ PRODUCT CARD ============
+function isNewProduct(createdAt) {
+  if (!createdAt) return false;
+  return (Date.now() - new Date(createdAt).getTime()) < 24 * 60 * 60 * 1000;
+}
+
 function productCard(p, isFlash = false) {
   const pct = isFlash ? Math.round((p.stock/p.stockInit)*100) : null;
   const red = (p.oldPrice && p.price) ? Math.round(((p.oldPrice-p.price)/p.oldPrice)*100) : 0;
@@ -582,10 +591,12 @@ function productCard(p, isFlash = false) {
         onclick="event.stopPropagation();openProductImageModal(${pData})"
         title="Voir la fiche produit 🔍" style="cursor:pointer" />`
     : `<span>${p.emoji||"🛍️"}</span>`;
+  const newBadge = isNewProduct(p.createdAt) ? `<span class="pcard-badge-new">NEW</span>` : "";
   return `<div class="pcard" onclick='openProductImageModal(${pData})' style="cursor:pointer">
     <div class="pcard-img">
       ${imgEl}
       ${red > 0 ? `<span class="pcard-badge">-${red}%</span>` : ""}
+      ${newBadge}
       <span class="pcard-wish">♡</span>
     </div>
     <div class="pcard-body">
@@ -722,10 +733,52 @@ function openRencontreDetail(p) {
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#e91e8c,#c2185b)" onclick="waOpen('${RENCONTRES_WA}',encodeURIComponent('Bonjour, je souhaite accéder au profil ${p.displayName} — paiement : ${fmt(p.prixAcces)}'),'${(p.displayName||'').replace(/'/g,'')}')">
-        💬 Payer &amp; Accéder au profil — ${fmt(p.prixAcces)}
+      <button class="btn btn-primary" style="background:linear-gradient(135deg,#e91e8c,#c2185b)" onclick="closeModal();payerRencontre(${JSON.stringify(p).replace(/"/g,'&quot;')})">
+        🌊 Payer &amp; Accéder au profil — ${fmt(p.prixAcces)}
       </button>
     </div>`);
+}
+
+function payerRencontre(p) {
+  const name = (p.displayName || "").replace(/'/g, "\\'");
+  modalHTML(`
+    <h2>🌊 Paiement Wave <button class="modal-close" onclick="closeModal()">✕</button></h2>
+    <div style="background:#e3f2fd;border:1.5px solid #90caf9;border-radius:var(--radius);padding:14px;margin-bottom:16px;font-size:13px;line-height:1.8">
+      <strong>Veuillez payer Buzz des Influents avec Wave en cliquant sur ce lien</strong><br>
+      Montant : <strong style="color:#1DA1F2">505 FCFA</strong><br>
+      Profil : <strong>${p.displayName}</strong>
+    </div>
+    <a href="${RENCONTRES_WAVE_LINK}" target="_blank" rel="noopener"
+       style="display:block;text-align:center;background:#1DA1F2;color:#fff;font-weight:700;font-size:15px;padding:14px;border-radius:var(--radius);text-decoration:none;margin-bottom:16px"
+       onclick="">
+      🌊 Payer 505 FCFA avec Wave
+    </a>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">
+      Une fois le paiement effectué, cliquez sur le bouton ci-dessous.
+    </div>
+    <button class="btn btn-primary" style="width:100%;background:linear-gradient(135deg,#43a047,#388e3c)"
+      onclick="closeModal();confirmPaiementRencontre('${name}')">
+      ✅ J'ai payé — Contacter l'administrateur
+    </button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Annuler</button>
+  `);
+}
+
+function confirmPaiementRencontre(displayName) {
+  modalHTML(`
+    <h2>⚠️ Avant de continuer <button class="modal-close" onclick="closeModal()">✕</button></h2>
+    <div style="background:#fff8e1;border:1.5px solid #ffca28;border-radius:var(--radius);padding:16px;margin-bottom:16px;font-size:14px;line-height:1.9;color:#555">
+      ✅ <strong>Rassurez-vous d'avoir fait le paiement via Wave.</strong><br>
+      📸 <strong>Rassurez-vous d'avoir une preuve de votre paiement</strong> (capture d'écran du reçu Wave).<br><br>
+      Car vous êtes à la <strong>dernière étape</strong> :<br>
+      Discutez avec l'administrateur et <strong>envoyez-lui les preuves de votre paiement</strong> pour qu'il vous mette en contact avec le profil souhaité.
+    </div>
+    <button class="btn btn-primary" style="width:100%;background:#25D366;border-color:#25D366;font-size:15px"
+      onclick="closeModal();waOpen('${RENCONTRES_WA}',encodeURIComponent('Bonjour, j\\'ai payé 505 FCFA via Wave pour accéder au profil ${displayName}. Voici ma preuve de paiement.'),'${displayName}')">
+      💬 Ouvrir WhatsApp de l'administrateur
+    </button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Retour</button>
+  `);
 }
 
 function openRencontreRegister() {
@@ -1604,6 +1657,13 @@ async function doSearch() {
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && document.activeElement.id === "searchInput") doSearch();
 });
+
+let _liveTimer = null;
+function liveSearchPreview(val) {
+  clearTimeout(_liveTimer);
+  if (val.trim().length < 2) return;
+  _liveTimer = setTimeout(() => doSearch(), 500);
+}
 
 // ============ NAVIGATION ============
 function showPage(id) {
