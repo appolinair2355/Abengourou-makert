@@ -11,7 +11,7 @@ const sharp = require("sharp");
 
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 5000;
 
 const ADMIN_ID  = "buzz";
 const ADMIN_PWD = "arrow";
@@ -386,7 +386,6 @@ app.get("/api/settings", async (_req, res) => {
 
 app.post("/api/settings", async (req, res) => {
   try {
-    clearSettingsCache();
     const cur = await getSettings();
     const { companyName, companyPhone, companyEmail, companyWebsite, companyWhatsapp, subscriptionPrice, sms, categoryConfig, cabinePaymentLink, ikoddiApiKey, ikoddiGroupId, ikoddiEnabled, ikoddiSenderId, aiApiKey, aiEndpoint, aiModel } = req.body || {};
     const newName       = companyName      !== undefined ? companyName      : cur.companyName;
@@ -415,6 +414,7 @@ app.post("/api/settings", async (req, res) => {
        JSON.stringify(newCatCfg), newCabineLink, newIkoddiKey, newIkoddiGrp, newIkoddiOn, newIkoddiSdr,
        newAiKey, newAiEndpoint, newAiModel]
     );
+    clearSettingsCache(); // vider après la sauvegarde pour que le prochain GET lise les nouvelles valeurs
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
@@ -1504,16 +1504,19 @@ app.post("/api/ai/chat", async (req, res) => {
       if (matches / entryWords.length >= 0.6) return res.json({ reply: entry.answer, source: "brain" });
     }
 
-    // 2. Appel API IA — Groq en priorité (GROQ_API_KEY env var ou clé gsk_ admin), sinon clé admin
-    const groqKey      = process.env.GROQ_API_KEY || "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";
-    const configuredKey = settings.aiApiKey || "";
-    const isGroqKey    = (k) => k && k.startsWith("gsk_");
-    const usingGroq    = !!(groqKey || isGroqKey(configuredKey));
-    const apiKey       = groqKey || configuredKey || "";
-    const endpoint     = usingGroq
+    // 2. Appel API IA — priorité : env var > clé admin (paramètres) > clé par défaut Groq
+    const defaultGroqKey    = "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";
+    const OLD_FEATHERLESS   = "fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84";
+    const rawConfiguredKey  = settings.aiApiKey || "";
+    // Ignorer l'ancienne clé Featherless par défaut (résidu de la config initiale)
+    const configuredKey     = (rawConfiguredKey && rawConfiguredKey !== OLD_FEATHERLESS) ? rawConfiguredKey : "";
+    const isGroqKey         = (k) => k && k.startsWith("gsk_");
+    const apiKey            = process.env.GROQ_API_KEY || configuredKey || defaultGroqKey;
+    const usingGroq      = isGroqKey(apiKey);
+    const endpoint       = usingGroq
       ? "https://api.groq.com/openai/v1/chat/completions"
       : (settings.aiEndpoint || "https://api.featherless.ai/v1/chat/completions");
-    const model        = usingGroq
+    const model          = usingGroq
       ? "llama-3.3-70b-versatile"
       : (settings.aiModel || "meta-llama/Meta-Llama-3.1-8B-Instruct");
 
