@@ -3673,7 +3673,7 @@ function toggleAssistant() {
   _assistantOpen = !_assistantOpen;
   win.style.display = _assistantOpen ? "flex" : "none";
   if (_assistantOpen && _assistantHistory.length === 0) {
-    _assistantAddMsg("assistant", "Bienvenue dans la boutique ABENGOUROU-MARKET ! 🛍️\nJe suis votre assistante virtuelle. Que puis-je faire pour vous aujourd'hui ? Vous cherchez un produit, un service, un logement, un emploi…\nJe suis là pour vous aider ! 😊");
+    _assistantAddMsg("assistant", "Bonjour ! Je suis AMARA, votre assistante ABENGOUROU-MARKET. 🛍️\nQue puis-je faire pour vous aujourd'hui ? Vous cherchez un produit, un service, un logement, un emploi…\nJe suis là pour vous aider ! 😊");
     document.getElementById("assistantInput")?.focus();
   }
 }
