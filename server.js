@@ -100,9 +100,17 @@ async function initDB() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_group_id TEXT DEFAULT '';
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS ikoddi_sender_id TEXT DEFAULT 'Ikoddi';
-    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_api_key TEXT DEFAULT 'fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84';
-    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_endpoint TEXT DEFAULT 'https://api.featherless.ai/v1/chat/completions';
-    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'meta-llama/Meta-Llama-3.1-8B-Instruct';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_api_key TEXT DEFAULT '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';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_endpoint TEXT DEFAULT 'https://api.groq.com/openai/v1/chat/completions';
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS ai_model TEXT DEFAULT 'llama-3.3-70b-versatile';
+    -- Migration : remplacer l'ancienne clé Featherless par la clé Groq sur les déploiements existants
+    UPDATE settings SET
+      ai_api_key = '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',
+      ai_endpoint = 'https://api.groq.com/openai/v1/chat/completions',
+      ai_model    = 'llama-3.3-70b-versatile'
+    WHERE id = 1
+      AND (ai_api_key = 'fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84'
+           OR ai_api_key IS NULL OR ai_api_key = '');
     ALTER TABLE products ADD COLUMN IF NOT EXISTS image_signed BOOLEAN DEFAULT FALSE;
 
     CREATE TABLE IF NOT EXISTS ai_brain (
@@ -255,9 +263,9 @@ async function getSettings() {
     ikoddiGroupId: s.ikoddi_group_id || "10001958",
     ikoddiEnabled: s.ikoddi_enabled !== false,
     ikoddiSenderId: s.ikoddi_sender_id || "Ikoddi",
-    aiApiKey: s.ai_api_key || "fe_oa_4cc277c7f7c355dd0b1ad9b2d0276569663ab9508a28cd84",
-    aiEndpoint: s.ai_endpoint || "https://api.featherless.ai/v1/chat/completions",
-    aiModel: s.ai_model || "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    aiApiKey: s.ai_api_key || "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",
+    aiEndpoint: s.ai_endpoint || "https://api.groq.com/openai/v1/chat/completions",
+    aiModel: s.ai_model || "llama-3.3-70b-versatile",
   };
   _settingsCacheTime = Date.now();
   return _settingsCache;
